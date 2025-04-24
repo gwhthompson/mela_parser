@@ -13,4 +13,3 @@ output
 .env
 .idea
 *.log
-test.py
