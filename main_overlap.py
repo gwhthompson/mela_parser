@@ -66,30 +66,142 @@ def create_overlapping_chunks(text: str, chunk_size: int = 80000, overlap: int =
     return chunks
 
 
+def normalize_title(title: str) -> str:
+    """
+    Normalize recipe title for comparison.
+
+    Args:
+        title: Recipe title
+
+    Returns:
+        Normalized title (lowercase, no punctuation, trimmed, no duplicate markers)
+    """
+    import re
+
+    # Convert to lowercase
+    title = title.lower().strip()
+
+    # Remove common suffixes that indicate duplicates
+    suffixes = [
+        "(alternate entry)",
+        "(duplicate entry)",
+        "(shortened)",
+        "(detailed)",
+        "(repeat entry)",
+        "(duplicate entry 2)",
+        "(alternate)",
+        "(variation)",
+        "(recipe entry)",
+        "(starter)",
+        "(separate recipe)",
+    ]
+
+    for suffix in suffixes:
+        if title.endswith(suffix):
+            title = title[:-len(suffix)].strip()
+
+    # Remove punctuation and extra whitespace
+    title = re.sub(r'[^\w\s]', '', title)
+    title = re.sub(r'\s+', ' ', title)
+
+    return title.strip()
+
+
+def count_recipe_fields(recipe: MelaRecipe) -> int:
+    """
+    Count how many fields are populated in a recipe (quality metric).
+
+    Args:
+        recipe: Recipe to evaluate
+
+    Returns:
+        Number of populated fields
+    """
+    count = 0
+
+    if recipe.title and len(recipe.title.strip()) > 0:
+        count += 1
+    if recipe.text and len(recipe.text.strip()) > 0:
+        count += 2  # Description is valuable, count it more
+    if recipe.yield_ and len(recipe.yield_.strip()) > 0:
+        count += 1
+    if recipe.prepTime and recipe.prepTime > 0:
+        count += 1
+    if recipe.cookTime and recipe.cookTime > 0:
+        count += 1
+    if recipe.totalTime and recipe.totalTime > 0:
+        count += 1
+    if recipe.ingredients:
+        count += sum(len(grp.ingredients) for grp in recipe.ingredients)
+    if recipe.instructions:
+        count += len(recipe.instructions) * 2  # Instructions are valuable
+    if recipe.notes and len(recipe.notes.strip()) > 0:
+        count += 1
+    if recipe.categories:
+        count += len(recipe.categories)
+
+    return count
+
+
+def is_recipe_complete(recipe: MelaRecipe) -> bool:
+    """
+    Check if recipe has minimum required fields for quality.
+
+    Args:
+        recipe: Recipe to validate
+
+    Returns:
+        True if recipe meets minimum quality standards
+    """
+    has_title = recipe.title and len(recipe.title.strip()) > 0
+    has_ingredients = (
+        recipe.ingredients
+        and len(recipe.ingredients) > 0
+        and len(recipe.ingredients[0].ingredients) > 0
+    )
+    has_instructions = recipe.instructions and len(recipe.instructions) > 0
+
+    return has_title and has_ingredients and has_instructions
+
+
 def deduplicate_recipes(recipes: List[MelaRecipe]) -> List[MelaRecipe]:
     """
-    Deduplicate recipes by title (fuzzy matching).
+    Smart deduplication: keep most complete version of duplicate recipes.
 
     Args:
         recipes: List of recipes that may contain duplicates
 
     Returns:
-        Deduplicated list of recipes
+        Deduplicated list with most complete versions kept
     """
-    seen_titles = set()
-    unique_recipes = []
+    by_title = {}
 
     for recipe in recipes:
         # Normalize title for comparison
-        normalized = recipe.title.lower().strip()
+        normalized = normalize_title(recipe.title)
 
-        if normalized not in seen_titles:
-            seen_titles.add(normalized)
-            unique_recipes.append(recipe)
+        if not normalized:  # Skip empty titles
+            continue
+
+        if normalized not in by_title:
+            by_title[normalized] = recipe
         else:
-            logging.debug(f"Skipping duplicate: {recipe.title}")
+            # Compare completeness - keep better version
+            existing = by_title[normalized]
+            existing_score = count_recipe_fields(existing)
+            new_score = count_recipe_fields(recipe)
 
-    logging.info(f"Deduplicated: {len(recipes)} → {len(unique_recipes)} recipes")
+            if new_score > existing_score:
+                logging.debug(
+                    f"Replacing duplicate '{recipe.title}' "
+                    f"(score {new_score} > {existing_score})"
+                )
+                by_title[normalized] = recipe
+            else:
+                logging.debug(f"Skipping duplicate: {recipe.title}")
+
+    unique_recipes = list(by_title.values())
+    logging.info(f"Deduplicated: {len(recipes)} → {len(unique_recipes)} recipes (quality-based)")
     return unique_recipes
 
 
@@ -214,18 +326,33 @@ def main():
     logging.info(f"  Time: {extraction_time:.2f}s")
     logging.info("=" * 80)
 
-    # PHASE 4: Deduplicate
+    # PHASE 4: Filter Incomplete Recipes
     logging.info("=" * 80)
-    logging.info("PHASE 4: Deduplicating Recipes")
+    logging.info("PHASE 4: Filtering Incomplete Recipes")
     logging.info("=" * 80)
 
-    unique_recipes = deduplicate_recipes(all_recipes)
+    complete_recipes = [r for r in all_recipes if is_recipe_complete(r)]
+    incomplete_count = len(all_recipes) - len(complete_recipes)
+
+    if incomplete_count > 0:
+        logging.info(f"Filtered out {incomplete_count} incomplete recipes")
+        # Log some examples
+        incomplete_recipes = [r for r in all_recipes if not is_recipe_complete(r)]
+        for recipe in incomplete_recipes[:10]:  # Show first 10
+            logging.debug(f"  Incomplete: {recipe.title}")
+
+    # PHASE 5: Deduplicate (Quality-Based)
+    logging.info("=" * 80)
+    logging.info("PHASE 5: Smart Deduplication")
+    logging.info("=" * 80)
+
+    unique_recipes = deduplicate_recipes(complete_recipes)
 
     logging.info(f"Final recipe count: {len(unique_recipes)}")
 
-    # PHASE 5: Write Recipes to Disk
+    # PHASE 6: Write Recipes to Disk
     logging.info("=" * 80)
-    logging.info("PHASE 5: Writing Recipes to Disk")
+    logging.info("PHASE 6: Writing Recipes to Disk")
     logging.info("=" * 80)
 
     out_dir = Path(args.output_dir) / f"{book_slug}-overlap"
@@ -259,9 +386,9 @@ def main():
 
     logging.info(f"\nWritten: {written_count}, Skipped: {skipped_count}")
 
-    # PHASE 6: Create Archive
+    # PHASE 7: Create Archive
     logging.info("=" * 80)
-    logging.info("PHASE 6: Creating Archive")
+    logging.info("PHASE 7: Creating Archive")
     logging.info("=" * 80)
 
     archive_zip = shutil.make_archive(

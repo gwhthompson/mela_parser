@@ -267,18 +267,29 @@ class CookbookParser:
 
         return f"""You are extracting recipes from the cookbook: "{book_title}"
 
-TASK: Extract EVERY recipe you find in the text below. A recipe typically has:
-- A title/name
-- A list of ingredients
-- Cooking instructions/steps
+TASK: Extract EVERY COMPLETE recipe you find in the text below.
 
-IMPORTANT:
-- Extract ALL recipes, no matter how many there are
+A COMPLETE recipe MUST have ALL of these:
+1. A title/name
+2. A list of ingredients with measurements (e.g., "200g flour", "2 tbsp olive oil")
+3. Cooking instructions/steps (how to prepare the dish)
+
+DO NOT EXTRACT:
+- Section headers (e.g., "VEGETABLES", "DESSERTS", "MY FAVORITES")
+- Recipe lists/overviews (e.g., "Ten ways to cook eggs" without full details)
+- Incomplete recipes missing ingredients OR instructions
+- Cross-references (e.g., "See page 45 for recipe")
+- Recipe titles without the full recipe
+- Ingredient lists without instructions
+- General cooking tips or techniques
+
+EXTRACTION RULES:
+- ONLY extract if you can fill ingredients AND instructions fields
 - If prep/cook time is not explicitly stated, leave those fields blank
 - If yield/servings is not stated, leave it blank
 - Group related ingredients together if they have section headings
 - Categorize recipes appropriately (Breakfasts, Mains, Desserts, etc.)
-- Skip non-recipe content like introductions, forewords, and tables of contents
+- When unsure if something is a complete recipe, skip it
 
 START EXTRACTING:
 
