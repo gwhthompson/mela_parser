@@ -18,6 +18,7 @@ from ebooklib import epub
 from converter import EpubConverter
 from parse import CookbookParser, MelaRecipe
 from recipe import RecipeProcessor
+from image_processor import extract_images_for_recipe
 
 
 def setup_logging(log_file: str = "process_overlap.log"):
@@ -237,6 +238,16 @@ def main():
         default="output",
         help="Base output directory (default: output)",
     )
+    parser.add_argument(
+        "--verify-images",
+        action="store_true",
+        help="Use AI vision to verify image matches (adds ~$0.02 per book)",
+    )
+    parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="Skip image extraction entirely (faster)",
+    )
 
     args = parser.parse_args()
 
@@ -288,9 +299,10 @@ def main():
     logging.info("=" * 80)
 
     cookbook_parser = CookbookParser(model=args.model)
-    all_recipes = []
+    all_recipes = []  # List of (recipe, chunk_index) tuples
 
     for i, chunk in enumerate(chunks, 1):
+        chunk_index = i - 1  # 0-based index for array access
         logging.info(f"\nProcessing chunk {i}/{len(chunks)} ({len(chunk):,} chars)")
 
         try:
@@ -308,10 +320,9 @@ def main():
                 recipes_to_keep = chunk_recipes.recipes
                 logging.info(f"  Extracted {len(recipes_to_keep)} recipes (last chunk, keeping all)")
 
-            all_recipes.extend(recipes_to_keep)
-
-            # Log extracted titles
+            # Store recipes with their chunk index for later image lookup
             for recipe in recipes_to_keep:
+                all_recipes.append((recipe, chunk_index))
                 logging.info(f"    ✓ {recipe.title}")
 
         except Exception as e:
@@ -331,13 +342,15 @@ def main():
     logging.info("PHASE 4: Filtering Incomplete Recipes")
     logging.info("=" * 80)
 
-    complete_recipes = [r for r in all_recipes if is_recipe_complete(r)]
-    incomplete_count = len(all_recipes) - len(complete_recipes)
+    # Separate recipes from chunk indices
+    recipes_only = [r for r, _ in all_recipes]
+    complete_tuples = [(r, idx) for r, idx in all_recipes if is_recipe_complete(r)]
+    incomplete_count = len(all_recipes) - len(complete_tuples)
 
     if incomplete_count > 0:
         logging.info(f"Filtered out {incomplete_count} incomplete recipes")
         # Log some examples
-        incomplete_recipes = [r for r in all_recipes if not is_recipe_complete(r)]
+        incomplete_recipes = [r for r, _ in all_recipes if not is_recipe_complete(r)]
         for recipe in incomplete_recipes[:10]:  # Show first 10
             logging.debug(f"  Incomplete: {recipe.title}")
 
@@ -346,7 +359,13 @@ def main():
     logging.info("PHASE 5: Smart Deduplication")
     logging.info("=" * 80)
 
-    unique_recipes = deduplicate_recipes(complete_recipes)
+    # Deduplicate while preserving chunk indices
+    complete_recipes_only = [r for r, _ in complete_tuples]
+    unique_recipes_only = deduplicate_recipes(complete_recipes_only)
+
+    # Rebuild with chunk indices (use first occurrence)
+    title_to_chunk = {r.title: idx for r, idx in complete_tuples}
+    unique_recipes = [(r, title_to_chunk[r.title]) for r in unique_recipes_only]
 
     logging.info(f"Final recipe count: {len(unique_recipes)}")
 
@@ -361,21 +380,33 @@ def main():
     processor = RecipeProcessor(args.epub_path, book)
     written_count = 0
     skipped_count = 0
+    images_found = 0
 
-    for mela_recipe in unique_recipes:
+    for mela_recipe, chunk_index in unique_recipes:
         try:
             # Convert MelaRecipe to dict format
             recipe_dict = processor._mela_recipe_to_object(mela_recipe)
             recipe_dict["link"] = book_title
             recipe_dict["id"] = str(uuid.uuid4())
-            recipe_dict["images"] = []
+
+            # Extract and process images
+            if args.no_images:
+                recipe_dict["images"] = []
+            else:
+                recipe_dict["images"] = extract_images_for_recipe(
+                    chunks, chunk_index, mela_recipe, book, use_ai_verification=args.verify_images
+                )
+
+                if recipe_dict["images"]:
+                    images_found += 1
 
             # Write recipe
             output_path = processor.write_recipe(recipe_dict, output_dir=str(out_dir))
 
             if output_path:
                 written_count += 1
-                logging.info(f"✓ {recipe_dict['title']}")
+                img_indicator = "📷" if recipe_dict["images"] else "  "
+                logging.info(f"{img_indicator} ✓ {recipe_dict['title']}")
             else:
                 skipped_count += 1
                 logging.warning(f"⊘ Skipped (incomplete): {recipe_dict.get('title', 'UNKNOWN')}")
@@ -385,6 +416,8 @@ def main():
             logging.error(f"✗ Error writing recipe: {e}")
 
     logging.info(f"\nWritten: {written_count}, Skipped: {skipped_count}")
+    if not args.no_images:
+        logging.info(f"Images found: {images_found}/{written_count} ({images_found/written_count*100:.1f}%)")
 
     # PHASE 7: Create Archive
     logging.info("=" * 80)
@@ -409,6 +442,12 @@ def main():
     logging.info(f"Unique recipes: {len(unique_recipes)}")
     logging.info(f"Recipes written: {written_count}")
     logging.info(f"Success rate: {written_count/len(unique_recipes)*100:.1f}%")
+    if not args.no_images:
+        logging.info(f"Recipes with images: {images_found}/{written_count} ({images_found/written_count*100:.1f}%)")
+        if args.verify_images:
+            logging.info(f"Image verification: AI-powered (gpt-5-nano vision)")
+        else:
+            logging.info(f"Image selection: Heuristic (largest image)")
     logging.info(f"Total time: {time.time() - start_time:.2f}s")
     logging.info(f"Output: {archive_mela}")
 
