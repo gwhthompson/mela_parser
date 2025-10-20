@@ -282,6 +282,7 @@ DO NOT EXTRACT:
 - Recipe titles without the full recipe
 - Ingredient lists without instructions
 - General cooking tips or techniques
+- Recipe continuations (titles with "continued", "(cont)", or appearing to start mid-recipe)
 
 EXTRACTION RULES:
 - ONLY extract if you can fill ingredients AND instructions fields

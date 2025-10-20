@@ -162,7 +162,14 @@ def is_recipe_complete(recipe: MelaRecipe) -> bool:
     )
     has_instructions = recipe.instructions and len(recipe.instructions) > 0
 
-    return has_title and has_ingredients and has_instructions
+    # Filter out recipe continuations (split across chunks)
+    is_continuation = (
+        "continued" in recipe.title.lower()
+        or "(cont" in recipe.title.lower()
+        or recipe.title.lower().endswith("cont")
+    )
+
+    return has_title and has_ingredients and has_instructions and not is_continuation
 
 
 def deduplicate_recipes(recipes: List[MelaRecipe]) -> List[MelaRecipe]:
@@ -229,8 +236,8 @@ def main():
     parser.add_argument(
         "--overlap",
         type=int,
-        default=40000,
-        help="Overlap size in characters (default: 40000, 50%% of chunk)",
+        default=60000,
+        help="Overlap size in characters (default: 60000, 75%% of chunk)",
     )
     parser.add_argument(
         "--output-dir",
