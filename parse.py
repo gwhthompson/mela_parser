@@ -98,6 +98,97 @@ class CookbookRecipes(BaseModel):
         extra = "forbid"
 
 
+class RecipeMarkerInserter:
+    """Inserts delimiters before each recipe in markdown for boundary detection."""
+
+    def __init__(self, model: str = "gpt-5-nano"):
+        self.client = OpenAI()
+        self.model = model
+        self.marker = "===RECIPE_START==="
+
+    def insert_markers(self, markdown: str, book_title: str = "") -> str:
+        """
+        Insert markers before each recipe in the markdown.
+
+        Args:
+            markdown: Full cookbook markdown
+            book_title: Optional book title for context
+
+        Returns:
+            Markdown with ===RECIPE_START=== markers inserted
+        """
+        title_context = f"Cookbook: {book_title}\n\n" if book_title else ""
+
+        prompt = f"""{title_context}Insert the marker "===RECIPE_START===" immediately before EVERY recipe in this cookbook.
+
+A recipe typically has:
+- A title/name
+- Ingredients with measurements (tablespoons, teaspoons, cups, grams, ml, etc.)
+- Cooking instructions/steps (often numbered or in paragraphs)
+- Often starts with "SERVES" or "MAKES" or "YIELD"
+- Often preceded by a description or story
+
+Rules:
+- Insert ===RECIPE_START=== on its own line right before each recipe title
+- Do NOT change any other text
+- Do NOT remove or restructure anything
+- ONLY insert the markers
+- Work through the ENTIRE text systematically
+- Every recipe must get a marker
+- Skip non-recipe content (forewords, introductions, indexes)
+
+{markdown}"""
+
+        try:
+            logging.info(f"Inserting recipe markers with {self.model} (text length: {len(markdown)} chars)")
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                # Note: gpt-5-nano only supports default temperature (1)
+            )
+
+            marked_text = response.choices[0].message.content
+
+            # Count markers
+            marker_count = marked_text.count(self.marker)
+            logging.info(f"Inserted {marker_count} recipe markers")
+
+            # Log token usage
+            if hasattr(response, "usage") and response.usage:
+                usage = response.usage
+                logging.info(
+                    f"Token usage - Input: {usage.prompt_tokens}, "
+                    f"Output: {usage.completion_tokens}, "
+                    f"Total: {usage.total_tokens}"
+                )
+
+            return marked_text
+
+        except Exception as e:
+            logging.error(f"Error inserting markers with {self.model}: {e}")
+            raise
+
+    def split_by_markers(self, marked_text: str) -> List[str]:
+        """
+        Split marked text into recipe sections.
+
+        Args:
+            marked_text: Text with ===RECIPE_START=== markers
+
+        Returns:
+            List of recipe text sections (without markers)
+        """
+        sections = marked_text.split(self.marker)
+
+        # First section is pre-recipe content (skip it)
+        recipe_sections = [s.strip() for s in sections[1:] if s.strip()]
+
+        logging.info(f"Split into {len(recipe_sections)} recipe sections")
+
+        return recipe_sections
+
+
 class CookbookParser:
     """
     Unified parser that extracts all recipes from cookbook markdown in a single pass.
