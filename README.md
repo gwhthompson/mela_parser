@@ -1,38 +1,35 @@
 # Mela Recipe Parser
 
-A tool for extracting recipes from EPUB books and converting them to the Mela recipe format.
-
-## Features
-
-- Parse EPUB files to extract recipe content
-- Convert recipe text to structured Mela recipe format
-- Extract and process images from EPUB files
-- Generate individual .melarecipe files and a combined .melarecipes archive
+Extract recipes from EPUB cookbooks to Mela format.
 
 ## Usage
 
 ```bash
-uv run main.py path/to/cookbook.epub
+uv run python main_chapters.py path/to/cookbook.epub
 ```
 
-The tool will:
-1. Extract recipes from the EPUB file
-2. Parse each recipe into a structured format
-3. Save individual recipes as .melarecipe files
-4. Create a combined .melarecipes archive
+## Current Status
 
-## Output
+**Goal**: Extract exactly 125 recipes from Jerusalem matching official list
+**Solution**: Chapter-based extraction
+**Status**: `main_chapters.py` implemented, debugging extraction
 
-- Individual recipes: `output/<book-slug>/<recipe-slug>.melarecipe`
-- Combined archive: `output/<book-slug>.melarecipes`
+## The Approach
 
-## Development
+1. **Discover recipe list** (scan book for links/TOC)
+2. **Split by chapters** (EPUB natural structure, no overlap)
+3. **Extract per chapter** (MarkItDown + GPT-5-nano, guided by list)
+4. **Validate** against expected counts
 
-### Requirements
+## Test Targets
 
-- Python 3.13+
-- Dependencies listed in pyproject.toml
+- Jerusalem: 125 recipes
+- Modern Way: 142 recipes
+- Completely Perfect: 122 recipes
+- Simple: 140 recipes
 
-## License
+Lists in: `examples/output/recipe-lists/`
 
-MIT
+## Next
+
+Fix `main_chapters.py` to extract exactly 125 recipes from Jerusalem.
