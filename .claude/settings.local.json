@@ -16,7 +16,15 @@
       "Bash(wc:*)",
       "Bash(done)",
       "Bash(for file in examples/output/recipe-lists/*.txt)",
-      "Bash(do:*)"
+      "Bash(do:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:platform.openai.com)",
+      "WebFetch(domain:cookbook.openai.com)",
+      "Bash(jq:*)",
+      "Bash(uv tool install:*)",
+      "Bash(uv run ruff:*)"
     ],
     "deny": [],
     "ask": []

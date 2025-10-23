@@ -15,7 +15,13 @@ env/
 
 # Output and logs
 output/
+debug/
 *.log
+
+# Testing and coverage
+htmlcov/
+.coverage
+.coverage.*
 
 # IDE
 .idea/
@@ -28,3 +34,6 @@ output/
 
 # macOS
 .DS_Store
+
+# Mela recipe archives
+*.melarecipes

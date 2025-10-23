@@ -1,31 +1,47 @@
 #!/usr/bin/env python3
+"""EPUB to Markdown converter using MarkItDown.
+
+This module provides conversion utilities for transforming EPUB cookbooks into
+clean, LLM-friendly markdown format. It handles:
+- Full EPUB to markdown conversion
+- Token estimation and chunking strategies
+- Front matter removal (foreword, TOC, etc.)
+- Smart heading-based chunking for large files
+
+The EpubConverter class is designed to work with modern LLMs that have large
+context windows (e.g., 256K tokens) but may need chunking for extremely large
+cookbooks.
 """
-EPUB to Markdown converter using MarkItDown.
-Converts entire EPUB cookbooks to clean, LLM-friendly markdown.
-"""
+
 import logging
-import tempfile
-from pathlib import Path
-from typing import Optional
 
 from markitdown import MarkItDown
 
 
 class EpubConverter:
-    """Converts EPUB files to markdown using MarkItDown."""
+    """Convert EPUB files to markdown using MarkItDown.
 
-    def __init__(self):
+    This converter uses the MarkItDown library to transform EPUB files into
+    clean markdown that's optimized for LLM processing. It includes utilities
+    for estimating token counts, chunking large files, and removing non-recipe
+    content like forewords and tables of contents.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the EPUB converter with MarkItDown."""
         self.md = MarkItDown()
 
     def convert_epub_to_markdown(self, epub_path: str) -> str:
-        """
-        Convert an EPUB file to markdown.
+        """Convert an EPUB file to markdown.
 
         Args:
-            epub_path: Path to the EPUB file
+            epub_path: Path to the EPUB file to convert
 
         Returns:
             Markdown content as a string
+
+        Raises:
+            Exception: If conversion fails or file cannot be read
         """
         logging.info(f"Converting EPUB to Markdown: {epub_path}")
 
@@ -34,7 +50,9 @@ class EpubConverter:
             markdown_content = result.text_content
 
             if not markdown_content or len(markdown_content.strip()) < 100:
-                logging.warning(f"Conversion produced minimal content: {len(markdown_content)} chars")
+                logging.warning(
+                    f"Conversion produced minimal content: {len(markdown_content)} chars"
+                )
             else:
                 logging.info(f"Conversion successful: {len(markdown_content)} characters")
 
@@ -45,55 +63,77 @@ class EpubConverter:
             raise
 
     def estimate_tokens(self, text: str) -> int:
-        """
-        Rough estimate of token count (1 token ≈ 4 characters).
+        """Rough estimate of token count (1 token ≈ 4 characters).
+
+        This is a simple heuristic that works reasonably well for English text.
+        For more accurate token counting, use tiktoken with the specific model's
+        tokenizer.
 
         Args:
-            text: The text to estimate
+            text: The text to estimate tokens for
 
         Returns:
             Estimated token count
+
+        Examples:
+            >>> converter = EpubConverter()
+            >>> converter.estimate_tokens("Hello world!")
+            3
+            >>> converter.estimate_tokens("A" * 400)
+            100
         """
         return len(text) // 4
 
     def needs_chunking(self, markdown: str, max_tokens: int = 200000) -> bool:
-        """
-        Check if markdown content exceeds token limit and needs chunking.
+        """Check if markdown content exceeds token limit and needs chunking.
+
+        Uses a conservative estimate to determine if content will fit within
+        the specified token limit. Defaults to 200K tokens to leave a buffer
+        for 256K context window models.
 
         Args:
-            markdown: The markdown content
-            max_tokens: Maximum token limit (default: 200K, leaving buffer for 256K context)
+            markdown: The markdown content to check
+            max_tokens: Maximum token limit. Defaults to 200000 (leaving buffer for 256K context).
 
         Returns:
-            True if content needs to be chunked
+            True if content needs to be chunked, False otherwise
         """
         estimated_tokens = self.estimate_tokens(markdown)
         logging.info(f"Estimated tokens: {estimated_tokens}")
         return estimated_tokens > max_tokens
 
     def chunk_by_headings(self, markdown: str, level: int = 1) -> list[str]:
-        """
-        Split markdown into chunks based on heading level.
+        r"""Split markdown into chunks based on heading level.
+
+        Splits markdown at headings of the specified level, preserving the
+        heading in each chunk. Useful for splitting by chapters (level 1) or
+        sections (level 2).
 
         Args:
-            markdown: The markdown content
-            level: Heading level to split on (1 = #, 2 = ##, etc.)
+            markdown: The markdown content to chunk
+            level: Heading level to split on (1 = #, 2 = ##, etc.). Defaults to 1.
 
         Returns:
-            List of markdown chunks
+            List of markdown chunks, each starting with a heading
+
+        Examples:
+            >>> content = "# Chapter 1\\nText\\n# Chapter 2\\nMore text"
+            >>> converter = EpubConverter()
+            >>> chunks = converter.chunk_by_headings(content, level=1)
+            >>> len(chunks)
+            2
         """
         heading_prefix = "#" * level + " "
         lines = markdown.split("\n")
 
-        chunks = []
-        current_chunk = []
+        chunks: list[str] = []
+        current_chunk: list[str] = []
 
         for line in lines:
-            if line.startswith(heading_prefix):
-                # Start new chunk if we have content
-                if current_chunk:
-                    chunks.append("\n".join(current_chunk))
-                    current_chunk = []
+            if line.startswith(heading_prefix) and current_chunk:
+                # Start new chunk when we hit a heading and have content
+                chunks.append("\n".join(current_chunk))
+                current_chunk = []
 
             current_chunk.append(line)
 
@@ -105,28 +145,45 @@ class EpubConverter:
         return chunks
 
     def strip_front_matter(self, markdown: str, min_ingredient_count: int = 3) -> str:
-        """
-        Remove front matter (foreword, intro, TOC) and keep recipe content.
-        Looks for where recipes actually start (lines with ingredient-like patterns).
+        """Remove front matter (foreword, intro, TOC) and keep recipe content.
+
+        Looks for where recipes actually start by detecting ingredient-like
+        patterns (measurements, cooking terms) and strips everything before
+        that point.
 
         Args:
             markdown: The full markdown content
-            min_ingredient_count: Minimum ingredient-like lines before considering it recipe content
+            min_ingredient_count: Minimum ingredient-like lines before considering it
+                recipe content. Defaults to 3.
 
         Returns:
             Markdown with front matter removed
+
+        Notes:
+            This is a heuristic approach that works well for typical cookbooks
+            but may need tuning for specific book formats.
         """
         lines = markdown.split("\n")
 
         # Look for recipe patterns
-        ingredient_patterns = ["tablespoon", "teaspoon", "cup", "g ", "ml ", "kg ", "serves", "yield"]
+        ingredient_patterns = [
+            "tablespoon",
+            "teaspoon",
+            "cup",
+            "g ",
+            "ml ",
+            "kg ",
+            "serves",
+            "yield",
+        ]
         recipe_start_idx = 0
 
         for i in range(len(lines)):
             # Look ahead 20 lines and count ingredient-like lines
-            lookahead = lines[i:i+20]
+            lookahead = lines[i : i + 20]
             ingredient_count = sum(
-                1 for line in lookahead
+                1
+                for line in lookahead
                 if any(pattern in line.lower() for pattern in ingredient_patterns)
             )
 
@@ -144,16 +201,23 @@ class EpubConverter:
         return markdown
 
     def smart_chunk(self, markdown: str, max_tokens: int = 200000) -> list[str]:
-        """
-        Intelligently chunk markdown content if needed.
-        First strips front matter, then chunks if still too large.
+        """Intelligently chunk markdown content if needed.
+
+        First strips front matter to remove non-recipe content, then chunks
+        by progressively deeper heading levels if the content still exceeds
+        the token limit.
 
         Args:
-            markdown: The markdown content
-            max_tokens: Maximum tokens per chunk
+            markdown: The markdown content to chunk
+            max_tokens: Maximum tokens per chunk. Defaults to 200000.
 
         Returns:
-            List of markdown chunks (or single item if no chunking needed)
+            List of markdown chunks (single item if no chunking needed)
+
+        Notes:
+            - Tries heading levels 1-3 in sequence
+            - Returns unchunked content if chunking isn't possible
+            - Warns if unable to chunk within token limits
         """
         # First, strip front matter
         markdown = self.strip_front_matter(markdown)
@@ -193,10 +257,10 @@ if __name__ == "__main__":
     epub_path = sys.argv[1]
 
     markdown = converter.convert_epub_to_markdown(epub_path)
-    print(f"\n{'='*80}\n")
-    print(f"Markdown Preview (first 2000 chars):\n")
+    print(f"\n{'=' * 80}\n")
+    print("Markdown Preview (first 2000 chars):\n")
     print(markdown[:2000])
-    print(f"\n{'='*80}\n")
+    print(f"\n{'=' * 80}\n")
     print(f"Total length: {len(markdown)} characters")
     print(f"Estimated tokens: {converter.estimate_tokens(markdown)}")
     print(f"Needs chunking: {converter.needs_chunking(markdown)}")

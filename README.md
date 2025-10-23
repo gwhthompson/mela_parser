@@ -16,50 +16,39 @@ Extract recipes from EPUB cookbooks to [Mela](https://mela.recipes) format.
 ## Installation
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+# Install as a UV tool (recommended)
+uv tool install git+https://github.com/yourusername/mela_parser.git
+
+# Or install from local directory
 cd mela_parser
+uv tool install .
 
-# Install with uv (recommended)
+# For development
 uv sync --all-extras
-
-# Or install in development mode
-uv pip install -e ".[dev]"
 ```
 
 ## Quick Start
 
-```python
-from mela_parser import RecipeParser, RecipeProcessor
-
-# Parse a recipe from markdown
-recipe_text = """
-# Pasta Carbonara
-SERVES 4
-400g spaghetti
-200g pancetta
-...
-"""
-
-parser = RecipeParser(recipe_text)
-recipe = parser.parse()
-print(recipe.title)  # "Pasta Carbonara"
-```
-
-### Extract from EPUB
-
 ```bash
-# Using the main extraction script
-uv run python scripts/main_simple_chapters.py path/to/cookbook.epub
+# Extract recipes from an EPUB cookbook
+mela-parse path/to/cookbook.epub
 
-# Output will be in ./output/ directory
+# With options
+mela-parse cookbook.epub --model gpt-5-mini --output-dir my_recipes
 ```
+
+### Options
+
+- `--model`: Choose OpenAI model (`gpt-5-nano` [default] or `gpt-5-mini`)
+- `--output-dir`: Output directory (default: `output`)
+- `--no-images`: Skip image extraction
 
 ## Project Structure
 
 ```
 mela_parser/
 ├── src/mela_parser/        # Core package
+│   ├── cli.py              # CLI entry point
 │   ├── parse.py            # Recipe parsing with OpenAI
 │   ├── recipe.py           # Recipe processing and EPUB handling
 │   ├── converter.py        # EPUB to Markdown conversion
@@ -67,7 +56,6 @@ mela_parser/
 │   ├── prompt_library.py   # Prompt templates
 │   └── image_processor.py  # Image extraction and processing
 ├── tests/                  # Test suite
-├── scripts/                # Experimental extraction scripts
 ├── examples/              # Sample cookbooks and outputs
 ├── docs/                  # Documentation
 └── Makefile              # Common development tasks
@@ -77,7 +65,7 @@ mela_parser/
 
 ```bash
 # Install development dependencies
-make dev
+uv sync --all-extras
 
 # Run tests
 make test
@@ -88,14 +76,13 @@ make lint
 # Format code
 make format
 
-# Clean generated files
-make clean
+# Run CLI locally (without installing)
+uv run mela-parse examples/input/simple.epub
 ```
 
 ## Documentation
 
 - [Quick Start Guide](docs/QUICKSTART.md)
-- [Pipeline v2 Guide](docs/testing/PIPELINE_V2_GUIDE.md)
 - [Chapter Extractor](docs/CHAPTER_EXTRACTOR_README.md)
 - [Testing Guide](docs/TESTING.md)
 - [Prompt Design](docs/PROMPT_DESIGN.md)
@@ -121,52 +108,18 @@ Test targets verify extraction accuracy against known cookbooks:
 - Completely Perfect: 122 recipes
 - Simple: 140 recipes
 
-## API Reference
+## How It Works
 
-### RecipeParser
+1. **Chapter Conversion**: EPUB chapters are converted to clean markdown
+2. **Parallel Extraction**: Extracts recipes from all chapters simultaneously using async processing
+3. **Deduplication**: Removes duplicate recipes based on title
+4. **Export**: Saves recipes in Mela-compatible `.melarecipes` format
 
-Parse individual recipes from markdown text:
+## Requirements
 
-```python
-from mela_parser import RecipeParser
-
-parser = RecipeParser(recipe_text, model="gpt-5-nano")
-recipe = parser.parse()
-```
-
-### CookbookParser
-
-Extract multiple recipes from cookbook markdown:
-
-```python
-from mela_parser import CookbookParser
-
-parser = CookbookParser(model="gpt-5-mini")
-result = parser.parse_cookbook(markdown_content, book_title)
-print(f"Extracted {len(result.recipes)} recipes")
-```
-
-### RecipeProcessor
-
-Process EPUB files and extract recipes:
-
-```python
-from mela_parser import RecipeProcessor
-
-processor = RecipeProcessor("cookbook.epub")
-recipe_dict = processor.extract_recipe("chapter1.html#recipe1")
-filepath = processor.write_recipe(recipe_dict, output_dir="output")
-```
-
-## Environment Variables
-
-```bash
-# Required
-OPENAI_API_KEY=your-api-key-here
-
-# Optional
-OPENAI_MODEL=gpt-5-nano  # Default model for parsing
-```
+- Python 3.13+
+- OpenAI API key (set as `OPENAI_API_KEY` environment variable)
+- UV package manager (for installation)
 
 ## Contributing
 
@@ -190,6 +143,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Current Status
 
-🚧 **In Active Development** - Multiple extraction approaches are being tested and refined. See `scripts/` directory for experimental implementations.
-
-**Latest Approach**: Chapter-based extraction with GPT-5-nano for optimal accuracy and cost.
+✅ **Production Ready** - Chapter-based extraction with async parallel processing for optimal speed and accuracy.

@@ -52,7 +52,7 @@ Copy titles exactly. Preserve ingredient groupings. Leave time/yield blank if no
     return response.output_parsed.recipes
 
 
-async def main():
+async def main() -> None:
     """Find and inspect the chapters containing failed recipes."""
     epub_path = "examples/input/planted.epub"
 
@@ -70,7 +70,7 @@ async def main():
         found_titles = [title for title in FAILED_TITLES if title in markdown]
 
         if found_titles:
-            print(f"=" * 80)
+            print("=" * 80)
             print(f"Chapter: {item.get_name()}")
             print(f"Found: {', '.join(found_titles)}")
             print("=" * 80)
@@ -83,15 +83,15 @@ async def main():
                     print(f"\n📋 Recipe: {recipe.title}")
                     print(f"   Ingredient groups: {len(recipe.ingredients)}")
                     for i, grp in enumerate(recipe.ingredients):
-                        print(f"   Group {i+1}: '{grp.title}' - {len(grp.ingredients)} items")
+                        print(f"   Group {i + 1}: '{grp.title}' - {len(grp.ingredients)} items")
                         if not grp.ingredients:
-                            print(f"   ⚠️  EMPTY INGREDIENT GROUP!")
+                            print("   ⚠️  EMPTY INGREDIENT GROUP!")
                         else:
                             print(f"      First item: {grp.ingredients[0][:50]}")
 
                     print(f"   Instructions: {len(recipe.instructions)} steps")
                     if not recipe.instructions:
-                        print(f"   ⚠️  NO INSTRUCTIONS!")
+                        print("   ⚠️  NO INSTRUCTIONS!")
                     else:
                         print(f"      First step: {recipe.instructions[0][:80]}")
                     print()

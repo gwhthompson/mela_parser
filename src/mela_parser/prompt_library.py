@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Prompt Library for Chapter-Based Recipe Extraction
+"""Prompt Library for Chapter-Based Recipe Extraction.
+
 ===================================================
 
 This module contains versioned, optimized prompts for achieving 100% accuracy
@@ -15,13 +15,12 @@ Design Philosophy:
 - Version control: Track prompt performance and enable A/B testing
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import json
-
+from typing import Any
 
 # =============================================================================
 # PROMPT VERSIONS AND METADATA
@@ -30,6 +29,7 @@ import json
 
 class PromptType(str, Enum):
     """Types of prompts in the library."""
+
     RECIPE_LIST_DISCOVERY = "recipe_list_discovery"
     CHAPTER_EXTRACTION = "chapter_extraction"
     PROMPT_IMPROVEMENT = "prompt_improvement"
@@ -38,6 +38,7 @@ class PromptType(str, Enum):
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for a prompt version."""
+
     total_recipes: int = 0
     expected_recipes: int = 0
     correctly_extracted: int = 0
@@ -60,8 +61,7 @@ class PerformanceMetrics:
 
 @dataclass
 class PromptVersion:
-    """
-    A versioned prompt with metadata and performance tracking.
+    """A versioned prompt with metadata and performance tracking.
 
     Attributes:
         version: Semantic version (e.g., "1.0.0", "1.1.0", "2.0.0")
@@ -74,6 +74,7 @@ class PromptVersion:
         performance: Performance metrics from validation runs
         notes: Additional notes about this version
     """
+
     version: str
     prompt_type: PromptType
     prompt_text: str
@@ -81,10 +82,10 @@ class PromptVersion:
     timestamp: datetime = field(default_factory=datetime.now)
     description: str = ""
     temperature: float = 0.0
-    performance: Optional[PerformanceMetrics] = None
+    performance: PerformanceMetrics | None = None
     notes: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
         return {
             "version": self.version,
@@ -99,7 +100,7 @@ class PromptVersion:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PromptVersion":
+    def from_dict(cls, data: dict[str, Any]) -> "PromptVersion":
         """Deserialize from dictionary."""
         perf_data = data.get("performance")
         performance = PerformanceMetrics(**perf_data) if perf_data else None
@@ -434,7 +435,9 @@ CORRECT extraction:
 Extract all complete recipes now:
 """
 
-CHAPTER_EXTRACTION_PROMPT_V1_1 = """You are a precise recipe extractor for cookbook digitization. Your goal is 100% accuracy.
+CHAPTER_EXTRACTION_PROMPT_V1_1 = (
+    """You are a precise recipe extractor for cookbook digitization. """
+    """Your goal is 100% accuracy.
 
 <objective>
 Extract complete recipes from this cookbook chapter.
@@ -696,6 +699,7 @@ Remember: 100% accuracy means EXACT titles and COMPLETE recipes only.
 
 Extract all complete recipes now:
 """
+)
 
 # Template for expected titles section
 EXPECTED_TITLES_TEMPLATE = """
@@ -718,7 +722,9 @@ CRITICAL:
 # PROMPT IMPROVEMENT META-PROMPT (for automatic iteration)
 # =============================================================================
 
-PROMPT_IMPROVEMENT_META_PROMPT_V1_0 = """You are an expert prompt engineer specializing in LLM optimization for 100% accuracy.
+PROMPT_IMPROVEMENT_META_PROMPT_V1_0 = (
+    """You are an expert prompt engineer specializing in LLM optimization """
+    """for 100% accuracy.
 
 <task>
 Analyze the current prompt and validation results, then suggest specific improvements
@@ -828,6 +834,7 @@ Return a structured JSON object with improvement suggestions:
 
 Analyze and provide improvement suggestions:
 """
+)
 
 
 # =============================================================================
@@ -836,8 +843,7 @@ Analyze and provide improvement suggestions:
 
 
 class PromptLibrary:
-    """
-    Manages versioned prompts with performance tracking and A/B testing.
+    """Manages versioned prompts with performance tracking and A/B testing.
 
     Features:
     - Load/save prompts to JSON
@@ -848,18 +854,15 @@ class PromptLibrary:
     - Best prompt selection based on metrics
     """
 
-    def __init__(self, library_path: Optional[Path] = None):
-        """
-        Initialize the prompt library.
+    def __init__(self, library_path: Path | None = None) -> None:
+        """Initialize the prompt library.
 
         Args:
             library_path: Path to JSON file storing prompt versions.
                          Defaults to ./prompt_versions.json
         """
         self.library_path = library_path or Path("prompt_versions.json")
-        self.prompts: Dict[str, List[PromptVersion]] = {
-            pt.value: [] for pt in PromptType
-        }
+        self.prompts: dict[str, list[PromptVersion]] = {pt.value: [] for pt in PromptType}
 
         # Load existing library if available
         if self.library_path.exists():
@@ -871,52 +874,62 @@ class PromptLibrary:
     def _initialize_defaults(self) -> None:
         """Initialize library with default prompt versions."""
         # Recipe List Discovery prompts
-        self.add_prompt(PromptVersion(
-            version="1.0.0",
-            prompt_type=PromptType.RECIPE_LIST_DISCOVERY,
-            prompt_text=RECIPE_LIST_DISCOVERY_PROMPT_V1_0,
-            model="gpt-5-mini",
-            description="Initial recipe list discovery prompt with basic rules",
-            temperature=0.0,
-        ))
+        self.add_prompt(
+            PromptVersion(
+                version="1.0.0",
+                prompt_type=PromptType.RECIPE_LIST_DISCOVERY,
+                prompt_text=RECIPE_LIST_DISCOVERY_PROMPT_V1_0,
+                model="gpt-5-mini",
+                description="Initial recipe list discovery prompt with basic rules",
+                temperature=0.0,
+            )
+        )
 
-        self.add_prompt(PromptVersion(
-            version="1.1.0",
-            prompt_type=PromptType.RECIPE_LIST_DISCOVERY,
-            prompt_text=RECIPE_LIST_DISCOVERY_PROMPT_V1_1,
-            model="gpt-5-mini",
-            description="Enhanced with constitutional AI, quality checks, and more examples",
-            temperature=0.0,
-        ))
+        self.add_prompt(
+            PromptVersion(
+                version="1.1.0",
+                prompt_type=PromptType.RECIPE_LIST_DISCOVERY,
+                prompt_text=RECIPE_LIST_DISCOVERY_PROMPT_V1_1,
+                model="gpt-5-mini",
+                description="Enhanced with constitutional AI, quality checks, and more examples",
+                temperature=0.0,
+            )
+        )
 
         # Chapter Extraction prompts
-        self.add_prompt(PromptVersion(
-            version="1.0.0",
-            prompt_type=PromptType.CHAPTER_EXTRACTION,
-            prompt_text=CHAPTER_EXTRACTION_PROMPT_V1_0,
-            model="gpt-5-nano",
-            description="Initial chapter extraction with basic completeness rules",
-            temperature=0.0,
-        ))
+        self.add_prompt(
+            PromptVersion(
+                version="1.0.0",
+                prompt_type=PromptType.CHAPTER_EXTRACTION,
+                prompt_text=CHAPTER_EXTRACTION_PROMPT_V1_0,
+                model="gpt-5-nano",
+                description="Initial chapter extraction with basic completeness rules",
+                temperature=0.0,
+            )
+        )
 
-        self.add_prompt(PromptVersion(
-            version="1.1.0",
-            prompt_type=PromptType.CHAPTER_EXTRACTION,
-            prompt_text=CHAPTER_EXTRACTION_PROMPT_V1_1,
-            model="gpt-5-nano",
-            description="Enhanced with detailed examples, exclusion rules, and quality checks",
-            temperature=0.0,
-        ))
+        self.add_prompt(
+            PromptVersion(
+                version="1.1.0",
+                prompt_type=PromptType.CHAPTER_EXTRACTION,
+                prompt_text=CHAPTER_EXTRACTION_PROMPT_V1_1,
+                model="gpt-5-nano",
+                description="Enhanced with detailed examples, exclusion rules, and quality checks",
+                temperature=0.0,
+            )
+        )
 
         # Prompt Improvement meta-prompt
-        self.add_prompt(PromptVersion(
-            version="1.0.0",
-            prompt_type=PromptType.PROMPT_IMPROVEMENT,
-            prompt_text=PROMPT_IMPROVEMENT_META_PROMPT_V1_0,
-            model="gpt-5-mini",
-            description="Meta-prompt for analyzing failures and suggesting improvements",
-            temperature=0.3,  # Slightly higher temp for creative suggestions
-        ))
+        self.add_prompt(
+            PromptVersion(
+                version="1.0.0",
+                prompt_type=PromptType.PROMPT_IMPROVEMENT,
+                prompt_text=PROMPT_IMPROVEMENT_META_PROMPT_V1_0,
+                model="gpt-5-mini",
+                description="Meta-prompt for analyzing failures and suggesting improvements",
+                temperature=0.3,  # Slightly higher temp for creative suggestions
+            )
+        )
 
     def add_prompt(self, prompt: PromptVersion) -> None:
         """Add a new prompt version to the library."""
@@ -925,11 +938,10 @@ class PromptLibrary:
     def get_prompt(
         self,
         prompt_type: PromptType,
-        version: Optional[str] = None,
-        model: Optional[str] = None,
-    ) -> Optional[PromptVersion]:
-        """
-        Get a specific prompt version.
+        version: str | None = None,
+        model: str | None = None,
+    ) -> PromptVersion | None:
+        """Get a specific prompt version.
 
         Args:
             prompt_type: Type of prompt to retrieve
@@ -959,11 +971,10 @@ class PromptLibrary:
     def get_best_prompt(
         self,
         prompt_type: PromptType,
-        model: Optional[str] = None,
+        model: str | None = None,
         metric: str = "accuracy_percent",
-    ) -> Optional[PromptVersion]:
-        """
-        Get the best performing prompt based on metrics.
+    ) -> PromptVersion | None:
+        """Get the best performing prompt based on metrics.
 
         Args:
             prompt_type: Type of prompt
@@ -993,8 +1004,7 @@ class PromptLibrary:
         version: str,
         metrics: PerformanceMetrics,
     ) -> None:
-        """
-        Update performance metrics for a prompt version.
+        """Update performance metrics for a prompt version.
 
         Args:
             prompt_type: Type of prompt
@@ -1010,10 +1020,9 @@ class PromptLibrary:
     def list_versions(
         self,
         prompt_type: PromptType,
-        model: Optional[str] = None,
-    ) -> List[PromptVersion]:
-        """
-        List all versions of a prompt type.
+        model: str | None = None,
+    ) -> list[PromptVersion]:
+        """List all versions of a prompt type.
 
         Args:
             prompt_type: Type of prompt
@@ -1052,11 +1061,10 @@ class PromptLibrary:
     def format_prompt(
         self,
         prompt_type: PromptType,
-        version: Optional[str] = None,
+        version: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """
-        Format a prompt with provided variables.
+        """Format a prompt with provided variables.
 
         Args:
             prompt_type: Type of prompt
@@ -1078,9 +1086,8 @@ class PromptLibrary:
 # =============================================================================
 
 
-def create_expected_titles_section(titles: List[str]) -> str:
-    """
-    Create the expected titles section for chapter extraction.
+def create_expected_titles_section(titles: list[str]) -> str:
+    """Create the expected titles section for chapter extraction.
 
     Args:
         titles: List of expected recipe titles for this chapter
@@ -1096,8 +1103,7 @@ def create_expected_titles_section(titles: List[str]) -> str:
 
 
 def format_recipe_list_prompt(input_sections: str) -> str:
-    """
-    Format the recipe list discovery prompt with input sections.
+    """Format the recipe list discovery prompt with input sections.
 
     Args:
         input_sections: Combined markdown link sections from chapters
@@ -1115,10 +1121,9 @@ def format_recipe_list_prompt(input_sections: str) -> str:
 
 def format_chapter_extraction_prompt(
     chapter_markdown: str,
-    expected_titles: Optional[List[str]] = None,
+    expected_titles: list[str] | None = None,
 ) -> str:
-    """
-    Format the chapter extraction prompt.
+    """Format the chapter extraction prompt.
 
     Args:
         chapter_markdown: Markdown content of the chapter
@@ -1155,7 +1160,10 @@ if __name__ == "__main__":
         PromptType.CHAPTER_EXTRACTION,
         model="gpt-5-nano",
     )
-    print(f"Latest extraction prompt: v{latest_extraction.version}")
+    if latest_extraction:
+        print(f"Latest extraction prompt: v{latest_extraction.version}")
+    else:
+        print("No extraction prompt found")
 
     # Example 2: Format a prompt with variables
     formatted = library.format_prompt(
@@ -1189,8 +1197,11 @@ if __name__ == "__main__":
         PromptType.CHAPTER_EXTRACTION,
         model="gpt-5-nano",
     )
-    if best and best.performance:
-        print(f"\nBest prompt: v{best.version} ({best.performance.accuracy_percent:.1f}%)")
+    if best:
+        if best.performance:
+            print(f"\nBest prompt: v{best.version} ({best.performance.accuracy_percent:.1f}%)")
+        else:
+            print(f"\nBest prompt: v{best.version} (no performance data)")
 
     # Example 5: List all versions
     versions = library.list_versions(PromptType.RECIPE_LIST_DISCOVERY)

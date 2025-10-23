@@ -2,6 +2,7 @@
 """Test recipe extraction with a small sample."""
 
 import logging
+
 from mela_parser.parse import CookbookParser
 
 logging.basicConfig(level=logging.INFO)
@@ -69,7 +70,7 @@ try:
 except Exception as e:
     print(f"\nGPT-5-NANO failed: {e}")
 
-print("\n" + "="*80 + "\n")
+print("\n" + "=" * 80 + "\n")
 
 # Test with gpt-5-mini
 parser_mini = CookbookParser(model="gpt-5-mini")

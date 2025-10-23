@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
+"""Image extraction and AI verification for recipes.
+
+This module provides functionality for extracting, verifying, and processing
+recipe images from EPUB cookbooks using AI vision capabilities. It includes:
+- Image path extraction from markdown
+- Image loading from EPUB files
+- AI-powered image-recipe matching using GPT vision
+- Best image selection based on size and relevance
+- Image optimization for mobile viewing
+
+The ImageProcessor class uses OpenAI's vision API to intelligently match
+images with recipes based on visual content and recipe ingredients.
 """
-Image extraction and AI verification for recipes.
-Uses GPT-5-nano vision to match images with recipes.
-"""
+
 import base64
 import logging
 import re
 from io import BytesIO
-from typing import List, Optional, Tuple
 
+from ebooklib import epub
 from openai import OpenAI
 from PIL import Image, UnidentifiedImageError
 
@@ -18,9 +28,8 @@ from .parse import MelaRecipe
 class ImageProcessor:
     """Process and verify recipe images using AI vision."""
 
-    def __init__(self, book, model: str = "gpt-5-nano"):
-        """
-        Initialize image processor.
+    def __init__(self, book: epub.EpubBook, model: str = "gpt-5-nano") -> None:
+        """Initialize image processor.
 
         Args:
             book: EpubBook object for loading images
@@ -31,9 +40,8 @@ class ImageProcessor:
         self.client = OpenAI()
 
     @staticmethod
-    def extract_image_paths_from_markdown(markdown: str) -> List[str]:
-        """
-        Extract all image paths from markdown content.
+    def extract_image_paths_from_markdown(markdown: str) -> list[str]:
+        """Extract all image paths from markdown content.
 
         Args:
             markdown: Markdown text containing image references
@@ -42,7 +50,7 @@ class ImageProcessor:
             List of image paths (e.g., ["../images/00011.jpeg", ...])
         """
         # MarkItDown creates: ![alt](../images/filename.jpg)
-        pattern = r'!\[.*?\]\(([^)]+\.(?:jpg|jpeg|png|gif))\)'
+        pattern = r"!\[.*?\]\(([^)]+\.(?:jpg|jpeg|png|gif))\)"
         paths = re.findall(pattern, markdown, re.IGNORECASE)
 
         # Also try simpler pattern
@@ -66,9 +74,8 @@ class ImageProcessor:
         # Remove ../ prefix
         return path[3:] if path.startswith("../") else path
 
-    def load_image_from_epub(self, image_path: str) -> Optional[Tuple[bytes, int, int]]:
-        """
-        Load image from EPUB and get dimensions.
+    def load_image_from_epub(self, image_path: str) -> tuple[bytes, int, int] | None:
+        """Load image from EPUB and get dimensions.
 
         Args:
             image_path: Path to image in EPUB
@@ -93,9 +100,8 @@ class ImageProcessor:
 
     def verify_image_matches_recipe(
         self, image_data: bytes, recipe: MelaRecipe, threshold: float = 0.6
-    ) -> Tuple[bool, float]:
-        """
-        Use AI vision to verify if image matches recipe.
+    ) -> tuple[bool, float]:
+        """Use AI vision to verify if image matches recipe.
 
         Args:
             image_data: Image bytes
@@ -144,7 +150,12 @@ Be specific about what you see in the image."""
                 ],
             )
 
-            answer = response.choices[0].message.content.upper()
+            content = response.choices[0].message.content
+            if content is None:
+                logging.error("Image verification returned empty response")
+                return (True, 0.5)
+
+            answer = content.upper()
 
             # Parse confidence
             if "YES" in answer:
@@ -168,19 +179,18 @@ Be specific about what you see in the image."""
 
     def select_best_image_for_recipe(
         self,
-        image_paths: List[str],
+        image_paths: list[str],
         recipe: MelaRecipe,
         use_ai_verification: bool = True,
         min_area: int = 300000,
-    ) -> Optional[str]:
-        """
-        Select the best image for a recipe.
+    ) -> str | None:
+        """Select the best image for a recipe.
 
         Args:
             image_paths: List of candidate image paths
             recipe: Recipe to match
             use_ai_verification: Whether to use AI vision verification
-            min_area: Minimum image area (width × height)
+            min_area: Minimum image area (width x height)
 
         Returns:
             Base64 encoded image or None
@@ -221,9 +231,7 @@ Be specific about what you see in the image."""
         # If AI verification enabled, verify each candidate
         if use_ai_verification:
             for candidate in candidates:
-                matches, confidence = self.verify_image_matches_recipe(
-                    candidate["data"], recipe
-                )
+                matches, confidence = self.verify_image_matches_recipe(candidate["data"], recipe)
                 candidate["ai_confidence"] = confidence
                 candidate["ai_matches"] = matches
 
@@ -267,14 +275,13 @@ Be specific about what you see in the image."""
 
 
 def extract_images_for_recipe(
-    markdown_chunks: List[str],
+    markdown_chunks: list[str],
     chunk_index: int,
     recipe: MelaRecipe,
-    book,
+    book: epub.EpubBook,
     use_ai_verification: bool = True,
-) -> List[str]:
-    """
-    Extract and verify images for a recipe from chunks.
+) -> list[str]:
+    """Extract and verify images for a recipe from chunks.
 
     Args:
         markdown_chunks: All markdown chunks

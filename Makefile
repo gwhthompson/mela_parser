@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format clean build
+.PHONY: help install dev test test-cov lint format format-check type-check pre-commit clean build lock sync
 
 help:  ## Show this help message
 	@echo "Usage: make [target]"
@@ -15,24 +15,33 @@ dev:  ## Install package with development dependencies
 test:  ## Run tests
 	uv run pytest -v
 
-test-cov:  ## Run tests with coverage
-	uv run pytest -v --cov=src/mela_parser --cov-report=term-missing
+test-cov:  ## Run tests with coverage report
+	uv run pytest -v --cov=src --cov-report=term-missing --cov-report=html
 
 lint:  ## Run linter (ruff check)
-	uv run ruff check src tests scripts
+	uv run ruff check src tests
 
 format:  ## Format code with ruff
-	uv run ruff format src tests scripts
+	uv run ruff format src tests
 
 format-check:  ## Check if code is formatted
-	uv run ruff format --check src tests scripts
+	uv run ruff format --check src tests
+
+type-check:  ## Run type checker (basedpyright)
+	uv run basedpyright
+
+pre-commit-install:  ## Install pre-commit hooks
+	uv run pre-commit install
+
+pre-commit-run:  ## Run pre-commit on all files
+	uv run pre-commit run --all-files
 
 clean:  ## Clean up generated files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
 	rm -rf .pytest_cache .ruff_cache build dist *.egg-info
-	rm -rf output/*.melarecipe
+	rm -rf output/*.melarecipe htmlcov .coverage
 
 build:  ## Build package distributions
 	uv build

@@ -1,6 +1,7 @@
 import sys
-from pathlib import Path
 from html.parser import HTMLParser
+from pathlib import Path
+
 import ebooklib
 from ebooklib import epub
 from ebooklib.utils import debug
@@ -254,16 +255,11 @@ else:
 
                 for i, item in enumerate(all_items, 1):
                     item_type = type(item).__name__
-                    file_name = getattr(
-                        item, "file_name", getattr(item, "id", "Unknown")
-                    )
+                    file_name = getattr(item, "file_name", getattr(item, "id", "Unknown"))
 
                     # Try to extract title for documents
                     title = "N/A"
-                    if (
-                        hasattr(item, "content")
-                        and item.get_type() == ebooklib.ITEM_DOCUMENT
-                    ):
+                    if hasattr(item, "content") and item.get_type() == ebooklib.ITEM_DOCUMENT:
                         title = extract_title_from_html(item.content)
 
                     print(f"\n[{i}] {item_type}")

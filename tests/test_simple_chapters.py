@@ -3,9 +3,11 @@
 TDD tests for main_simple_chapters.py
 Tests extraction accuracy against expected recipe lists.
 """
+
 import subprocess
-import json
 from pathlib import Path
+
+import pytest
 
 
 def load_expected_recipes(filename: str) -> list[str]:
@@ -20,7 +22,7 @@ def run_extraction(epub_path: str) -> dict:
     result = subprocess.run(
         ["uv", "run", "python", "main_simple_chapters.py", epub_path, "--model", "gpt-5-nano"],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     # Parse output for metrics
@@ -28,9 +30,10 @@ def run_extraction(epub_path: str) -> dict:
 
     # Extract counts from log
     import re
-    extracted_match = re.search(r'Extracted: (\d+)', output)
-    written_match = re.search(r'Written: (\d+)', output)
-    match_match = re.search(r'Match: (\d+)/(\d+)', output)
+
+    extracted_match = re.search(r"Extracted: (\d+)", output)
+    written_match = re.search(r"Written: (\d+)", output)
+    match_match = re.search(r"Match: (\d+)/(\d+)", output)
 
     return {
         "exit_code": result.returncode,
@@ -38,7 +41,7 @@ def run_extraction(epub_path: str) -> dict:
         "written": int(written_match.group(1)) if written_match else 0,
         "matched": int(match_match.group(1)) if match_match else 0,
         "expected": int(match_match.group(2)) if match_match else 0,
-        "output": output
+        "output": output,
     }
 
 
@@ -86,7 +89,7 @@ def test_completely_perfect_exact_count():
 
 def test_no_component_recipes_extracted():
     """System must NOT extract component recipes (For the X, SAUCE, etc.)."""
-    results = run_extraction("examples/input/jerusalem.epub")
+    run_extraction("examples/input/jerusalem.epub")
 
     # Read actual written files
     output_dir = Path("output/jerusalem-simple-chapters")
@@ -101,7 +104,7 @@ def test_no_component_recipes_extracted():
         "-sauce.melarecipe",
         "-marinade.melarecipe",
         "crumble.melarecipe",  # Standalone component
-        "cream.melarecipe",     # Standalone component
+        "cream.melarecipe",  # Standalone component
     ]
 
     found_components = []
@@ -123,7 +126,8 @@ def test_toc_discovery_completeness():
 
     # Check discovered count
     import re
-    discovered_match = re.search(r'Discovered (\d+) recipes', results["output"])
+
+    discovered_match = re.search(r"Discovered (\d+) recipes", results["output"])
     discovered = int(discovered_match.group(1)) if discovered_match else 0
 
     expected = load_expected_recipes("jerusalem-recipe-list.txt")
@@ -158,15 +162,15 @@ if __name__ == "__main__":
             print("✅ PASS")
             passed += 1
         except AssertionError as e:
-            print(f"❌ FAIL")
+            print("❌ FAIL")
             print(f"  {e}\n")
             failed += 1
         except Exception as e:
             print(f"💥 ERROR: {e}\n")
             failed += 1
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Results: {passed} passed, {failed} failed")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     sys.exit(0 if failed == 0 else 1)
