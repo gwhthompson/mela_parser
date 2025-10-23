@@ -5,11 +5,26 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
+.ruff_cache/
 
 # Virtual environments
-.venv
-output
-.aider*
-.env
-.idea
+.venv/
+venv/
+env/
+
+# Output and logs
+output/
 *.log
+
+# IDE
+.idea/
+.vscode/
+.aider*
+
+# Environment
+.env
+.env.local
+
+# macOS
+.DS_Store

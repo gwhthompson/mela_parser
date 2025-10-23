@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(git checkout:*)",
+      "Bash(uv run python:*)",
+      "Bash(cat:*)",
+      "Bash(python3:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(sort:*)",
+      "Bash(uv pip list:*)",
+      "Read(///**)",
+      "Bash(for file in debug/output/*.txt)",
+      "Bash(uv run pytest:*)",
+      "Bash(wc:*)",
+      "Bash(done)",
+      "Bash(for file in examples/output/recipe-lists/*.txt)",
+      "Bash(do:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

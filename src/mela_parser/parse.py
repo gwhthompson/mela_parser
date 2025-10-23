@@ -1,0 +1,355 @@
+from enum import Enum
+from typing import List, Optional
+import logging
+
+from openai import OpenAI
+from openai.types.responses import EasyInputMessageParam
+from pydantic import BaseModel, Field
+
+
+class Category(str, Enum):
+    Breakfasts = "Breakfasts"
+    Starters = "Starters"
+    Soups = "Soups"
+    Salads = "Salads"
+    Mains = "Mains"
+    Sides = "Sides"
+    Desserts = "Desserts"
+    Meat = "Meat"
+    Seafood = "Seafood"
+    Vegetarian = "Vegetarian"
+    Vegan = "Vegan"
+    Pasta = "Pasta"
+    Drinks = "Drinks"
+    Sauces = "Sauces"
+    Baking = "Baking"
+    Holiday = "Holiday"
+    Italian = "Italian"
+    Mexican = "Mexican"
+    Indian = "Indian"
+    Chinese = "Chinese"
+    Thai = "Thai"
+    Mediterranean = "Mediterranean"
+    Japanese = "Japanese"
+    MiddleEastern = "Middle Eastern"
+    Greek = "Greek"
+
+
+class IngredientGroup(BaseModel):
+    title: str = Field(
+        description="Section heading for this group of ingredients (e.g., 'Main ingredients', 'For the sauce', 'To serve')"
+    )
+    ingredients: List[str] = Field(
+        ...,
+        min_items=1,
+        description="List of ingredients with measurements. Each ingredient must include quantity and unit (e.g., '400g white fish fillets', '2 tbsp tahini', '1 red chilli, finely chopped')",
+        examples=[
+            ["400g white fish fillets", "2 tbsp tahini", "1 red chilli, finely chopped", "2 cloves garlic, minced"]
+        ]
+    )
+
+    class Config:
+        extra = "forbid"
+
+
+class MelaRecipe(BaseModel):
+    title: str = Field(
+        description="The complete recipe name exactly as written in the text. Do not add alternative names or translations.",
+        examples=["Chilli Fish with Tahini", "Roasted Cauliflower & Hazelnut Salad"]
+    )
+    text: Optional[str] = Field(
+        None,
+        description="Optional introduction or description paragraph that appears before the ingredients"
+    )
+    # Removed images field – images are now sourced from the raw input
+    # Using 'recipeYield' instead of 'yield' to avoid JSON schema issues with reserved keywords
+    recipeYield: Optional[str] = Field(
+        None,
+        description="Number of servings or yield (e.g., 'Serves 4', '12 cookies', '1 loaf'). Leave null if not stated.",
+        examples=["Serves 4", "Makes 12", "6-8 servings"]
+    )
+    prepTime: Optional[int] = Field(
+        None,
+        description="Preparation time in minutes. Convert hours to minutes (e.g., '1 hour' becomes 60). Leave null if not stated.",
+        examples=[15, 30, 60]
+    )
+    cookTime: Optional[int] = Field(
+        None,
+        description="Cooking/baking time in minutes. Convert hours to minutes. Leave null if not stated.",
+        examples=[20, 45, 90]
+    )
+    totalTime: Optional[int] = Field(
+        None,
+        description="Total time from start to finish in minutes. Leave null if not stated.",
+        examples=[35, 75, 150]
+    )
+    ingredients: List[IngredientGroup] = Field(
+        ...,
+        min_items=1,
+        description="One or more groups of ingredients. Use a single group with empty title if no groupings. Each group must have at least one ingredient with measurements.",
+        examples=[
+            [
+                {"title": "Main ingredients", "ingredients": ["400g fish", "2 tbsp oil"]},
+                {"title": "For the sauce", "ingredients": ["100ml tahini", "1 lemon"]}
+            ]
+        ]
+    )
+    instructions: List[str] = Field(
+        ...,
+        min_items=2,
+        description="Step-by-step cooking instructions. Each step should be a complete sentence describing one action. Must have at least 2 steps showing how to prepare and cook the dish.",
+        examples=[
+            ["Preheat oven to 200°C (180°C fan).", "Season the fish with salt and pepper.", "Heat oil in a large pan over medium-high heat.", "Fry the fish for 3-4 minutes on each side until golden.", "Drizzle with tahini sauce and serve."]
+        ]
+    )
+    notes: Optional[str] = Field(
+        None,
+        description="Optional notes, tips, variations, or storage instructions that appear after the recipe"
+    )
+    categories: Optional[List[Category]] = Field(
+        None,
+        description="Recipe categories (e.g., Mains, Desserts, Vegetarian). Select from the available enum values."
+    )
+
+    class Config:
+        extra = "forbid"
+        populate_by_name = True
+
+
+class RecipeParser:
+    def __init__(self, recipe_text: str, model: str = "gpt-5-nano"):
+        self.recipe_text = recipe_text
+        self.client = OpenAI()
+        self.model = model
+
+    def parse(self):
+        prompt = (
+            f"Extract the recipe from this text:\n\n{self.recipe_text}\n\n"
+            "IMPORTANT:\n"
+            "- If prep/cook time is not stated, leave those fields blank\n"
+            "- If yield/servings is not stated, leave it blank\n"
+            "- Do NOT guess or use placeholders like 'N/A'\n"
+            "- Preserve ingredient groupings if they have section headings\n"
+            "- Convert times to minutes (e.g., '1 hour' → 60 minutes)"
+        )
+        try:
+            response = self.client.responses.parse(
+                model=self.model,
+                input=[EasyInputMessageParam(role="user", content=prompt)],
+                text_format=MelaRecipe,
+            )
+            return response.output_parsed
+        except Exception as e:
+            logging.error(f"Error in RecipeParser.parse with {self.model}: {e}")
+            raise
+
+
+class CookbookRecipes(BaseModel):
+    """Schema for extracting multiple recipes from a cookbook section."""
+
+    recipes: List[MelaRecipe] = Field(
+        default_factory=list,
+        description="All complete recipes found in this section. Return empty list if no complete recipes (e.g., intro pages, table of contents, simple components). A complete recipe must have a title, ingredients with measurements, and cooking instructions (at least 2 steps)."
+    )
+
+    class Config:
+        extra = "forbid"
+
+
+class RecipeMarkerInserter:
+    """Inserts delimiters before each recipe in markdown for boundary detection."""
+
+    def __init__(self, model: str = "gpt-5-nano"):
+        self.client = OpenAI()
+        self.model = model
+        self.marker = "===RECIPE_START==="
+
+    def insert_markers(self, markdown: str, book_title: str = "") -> str:
+        """
+        Insert markers before each recipe in the markdown.
+
+        Args:
+            markdown: Full cookbook markdown
+            book_title: Optional book title for context
+
+        Returns:
+            Markdown with ===RECIPE_START=== markers inserted
+        """
+        title_context = f"Cookbook: {book_title}\n\n" if book_title else ""
+
+        prompt = f"""{title_context}Insert the marker "===RECIPE_START===" immediately before EVERY recipe in this cookbook.
+
+A recipe typically has:
+- A title/name
+- Ingredients with measurements (tablespoons, teaspoons, cups, grams, ml, etc.)
+- Cooking instructions/steps (often numbered or in paragraphs)
+- Often starts with "SERVES" or "MAKES" or "YIELD"
+- Often preceded by a description or story
+
+Rules:
+- Insert ===RECIPE_START=== on its own line right before each recipe title
+- Do NOT change any other text
+- Do NOT remove or restructure anything
+- ONLY insert the markers
+- Work through the ENTIRE text systematically
+- Every recipe must get a marker
+- Skip non-recipe content (forewords, introductions, indexes)
+
+{markdown}"""
+
+        try:
+            logging.info(f"Inserting recipe markers with {self.model} (text length: {len(markdown)} chars)")
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                # Note: gpt-5-nano only supports default temperature (1)
+            )
+
+            marked_text = response.choices[0].message.content
+
+            # Count markers
+            marker_count = marked_text.count(self.marker)
+            logging.info(f"Inserted {marker_count} recipe markers")
+
+            # Log token usage
+            if hasattr(response, "usage") and response.usage:
+                usage = response.usage
+                logging.info(
+                    f"Token usage - Input: {usage.prompt_tokens}, "
+                    f"Output: {usage.completion_tokens}, "
+                    f"Total: {usage.total_tokens}"
+                )
+
+            return marked_text
+
+        except Exception as e:
+            logging.error(f"Error inserting markers with {self.model}: {e}")
+            raise
+
+    def split_by_markers(self, marked_text: str) -> List[str]:
+        """
+        Split marked text into recipe sections.
+
+        Args:
+            marked_text: Text with ===RECIPE_START=== markers
+
+        Returns:
+            List of recipe text sections (without markers)
+        """
+        sections = marked_text.split(self.marker)
+
+        # First section is pre-recipe content (skip it)
+        recipe_sections = [s.strip() for s in sections[1:] if s.strip()]
+
+        logging.info(f"Split into {len(recipe_sections)} recipe sections")
+
+        return recipe_sections
+
+
+class CookbookParser:
+    """
+    Unified parser that extracts all recipes from cookbook markdown in a single pass.
+    Supports both GPT-5-nano and GPT-5-mini models.
+    """
+
+    def __init__(self, model: str = "gpt-5-nano"):
+        """
+        Initialize the parser.
+
+        Args:
+            model: Model to use ("gpt-5-nano" or "gpt-5-mini")
+        """
+        self.client = OpenAI()
+        self.model = model
+        logging.info(f"Initialized CookbookParser with model: {model}")
+
+    def parse_cookbook(self, markdown_content: str, book_title: str = "") -> CookbookRecipes:
+        """
+        Extract all recipes from cookbook markdown in a single pass.
+
+        Args:
+            markdown_content: Full markdown content of the cookbook
+            book_title: Title of the book (for context)
+
+        Returns:
+            CookbookRecipes object containing list of parsed recipes
+        """
+        prompt = self._build_extraction_prompt(markdown_content, book_title)
+
+        try:
+            logging.info(f"Parsing cookbook with {self.model} (content length: {len(markdown_content)} chars)")
+
+            response = self.client.responses.parse(
+                model=self.model,
+                input=[
+                    EasyInputMessageParam(role="user", content=prompt),
+                ],
+                text_format=CookbookRecipes,
+            )
+
+            recipes = response.output_parsed
+
+            if not recipes or not recipes.recipes:
+                logging.warning(f"No recipes extracted! Response type: {type(response)}")
+                logging.warning(f"Response output_parsed: {response.output_parsed}")
+
+            logging.info(f"Successfully extracted {len(recipes.recipes)} recipes")
+
+            # Log token usage if available
+            if hasattr(response, "usage") and response.usage:
+                try:
+                    usage = response.usage
+                    # Try different attribute names for different API versions
+                    input_tokens = getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", None))
+                    output_tokens = getattr(usage, "output_tokens", getattr(usage, "completion_tokens", None))
+                    total_tokens = getattr(usage, "total_tokens", None)
+
+                    if input_tokens is not None and output_tokens is not None:
+                        logging.info(
+                            f"Token usage - Input: {input_tokens}, "
+                            f"Output: {output_tokens}, "
+                            f"Total: {total_tokens or (input_tokens + output_tokens)}"
+                        )
+                except Exception as e:
+                    logging.debug(f"Could not log token usage: {e}")
+
+            return recipes
+
+        except Exception as e:
+            logging.error(f"Error in CookbookParser.parse_cookbook: {e}")
+            raise
+
+    def _build_extraction_prompt(self, markdown_content: str, book_title: str) -> str:
+        """Build the extraction prompt for the LLM."""
+
+        return f"""You are extracting recipes from the cookbook: "{book_title}"
+
+TASK: Extract EVERY COMPLETE recipe you find in the text below.
+
+A COMPLETE recipe MUST have ALL of these:
+1. A title/name
+2. A list of ingredients with measurements (e.g., "200g flour", "2 tbsp olive oil")
+3. Cooking instructions/steps (how to prepare the dish)
+
+DO NOT EXTRACT:
+- Section headers (e.g., "VEGETABLES", "DESSERTS", "MY FAVORITES")
+- Recipe lists/overviews (e.g., "Ten ways to cook eggs" without full details)
+- Incomplete recipes missing ingredients OR instructions
+- Cross-references (e.g., "See page 45 for recipe")
+- Recipe titles without the full recipe
+- Ingredient lists without instructions
+- General cooking tips or techniques
+- Recipe continuations (titles with "continued", "(cont)", or appearing to start mid-recipe)
+
+EXTRACTION RULES:
+- ONLY extract if you can fill ingredients AND instructions fields
+- If prep/cook time is not explicitly stated, leave those fields blank
+- If yield/servings is not stated, leave it blank
+- Group related ingredients together if they have section headings
+- Categorize recipes appropriately (Breakfasts, Mains, Desserts, etc.)
+- When unsure if something is a complete recipe, skip it
+
+START EXTRACTING:
+
+{markdown_content}"""
