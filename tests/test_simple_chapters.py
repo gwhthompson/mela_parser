@@ -20,7 +20,7 @@ def load_expected_recipes(filename: str) -> list[str]:
 def run_extraction(epub_path: str) -> dict:
     """Run extraction and return results."""
     result = subprocess.run(
-        ["uv", "run", "python", "main_simple_chapters.py", epub_path, "--model", "gpt-5-nano"],
+        ["uv", "run", "mela-parse", epub_path, "--model", "gpt-5-nano"],
         capture_output=True,
         text=True,
     )
@@ -92,7 +92,7 @@ def test_no_component_recipes_extracted():
     run_extraction("examples/input/jerusalem.epub")
 
     # Read actual written files
-    output_dir = Path("output/jerusalem-simple-chapters")
+    output_dir = Path("output/jerusalem")
     if not output_dir.exists():
         pytest.fail("Output directory not found")
 

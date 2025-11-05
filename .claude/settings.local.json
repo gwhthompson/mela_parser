@@ -24,7 +24,9 @@
       "WebFetch(domain:cookbook.openai.com)",
       "Bash(jq:*)",
       "Bash(uv tool install:*)",
-      "Bash(uv run ruff:*)"
+      "Bash(uv run ruff:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff check:*)"
     ],
     "deny": [],
     "ask": []
