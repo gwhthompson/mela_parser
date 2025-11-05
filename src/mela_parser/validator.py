@@ -171,7 +171,7 @@ class RecipeValidator:
 
         # Check metadata
         has_times = any([recipe.prepTime, recipe.cookTime, recipe.totalTime])
-        has_yield = bool(recipe.yield_)
+        has_yield = bool(recipe.recipeYield)
 
         # Calculate completeness score (weighted)
         score_components = []
