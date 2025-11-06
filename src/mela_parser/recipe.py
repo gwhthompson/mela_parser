@@ -340,12 +340,16 @@ class RecipeProcessor:
         if best_image:
             # Optimize image: max 600px wide, 144 DPI
             optimized = self._optimize_image(best_image)
-            best_image.close()
 
             # Encode optimized image to base64
             buffer = BytesIO()
             optimized.save(buffer, format="JPEG", quality=85, dpi=(144, 144))
-            optimized.close()
+
+            # Close images (optimized might be same object as best_image)
+            if optimized is not best_image:
+                optimized.close()
+            best_image.close()
+
             recipe_dict["images"] = [base64.b64encode(buffer.getvalue()).decode("utf-8")]
         else:
             recipe_dict["images"] = []
