@@ -5,6 +5,16 @@ Extract recipes from EPUB cookbooks to [Mela](https://mela.recipes) format.
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Disclaimer
+
+This software is provided "as-is" for personal, non-commercial use only.
+Users must ensure they have appropriate rights to any content processed.
+The authors disclaim all liability for copyright infringement or misuse.
+
+- This tool does **not** circumvent DRM or copy protection
+- This tool does **not** download content from the internet
+- Only processes locally-provided EPUB files
+
 ## Features
 
 - 📚 **EPUB Parsing** - Extract recipes from EPUB cookbook files
@@ -77,7 +87,7 @@ make lint
 make format
 
 # Run CLI locally (without installing)
-uv run mela-parse examples/input/simple.epub
+uv run mela-parse path/to/your-cookbook.epub
 ```
 
 ## Documentation
@@ -102,11 +112,7 @@ make test-cov
 uv run pytest tests/test_extraction.py -v
 ```
 
-Test targets verify extraction accuracy against known cookbooks:
-- Jerusalem: 125 recipes
-- Modern Way to Eat: 142 recipes
-- Completely Perfect: 122 recipes
-- Simple: 140 recipes
+Test targets verify extraction accuracy against your own EPUB cookbooks.
 
 ## How It Works
 
