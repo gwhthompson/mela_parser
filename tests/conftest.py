@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures for mela_parser tests."""
+
 import sys
 from pathlib import Path
 
