@@ -652,10 +652,7 @@ Prefer false negatives (missing a recipe) over false positives (wrong extraction
 
 ### Test Against Ground Truth
 
-1. **Load ground truth lists:**
-   - `jerusalem-recipe-list.txt` (125 recipes)
-   - `a-modern-way-to-eat-recipe-list.txt` (142 recipes)
-   - `completely-perfect-recipe-list.txt` (122 recipes)
+1. **Load ground truth lists** (create your own for your test EPUBs)
 
 2. **Run extraction with prompts**
 
