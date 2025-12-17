@@ -7,7 +7,7 @@ Extract recipes from EPUB cookbooks to [Mela](https://mela.recipes) format.
 
 ## Disclaimer
 
-For personal use only. Users are responsible for ensuring they have rights to process any content. No DRM circumvention. No liability accepted.
+This tool is for personal use. You must have the right to use any content you process. It does not bypass copy protection. The authors accept no liability for misuse.
 
 ## Features
 
