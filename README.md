@@ -2,6 +2,9 @@
 
 Extract recipes from EPUB cookbooks to [Mela](https://mela.recipes) format.
 
+[![CI](https://img.shields.io/github/actions/workflow/status/gwhthompson/mela_parser/ci.yml?branch=master)](https://github.com/gwhthompson/mela_parser/actions/workflows/ci.yml)
+[![codecov](https://img.shields.io/codecov/c/github/gwhthompson/mela_parser)](https://codecov.io/gh/gwhthompson/mela_parser)
+[![PyPI](https://img.shields.io/pypi/v/mela-parser)](https://pypi.org/project/mela-parser/)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -21,7 +24,7 @@ This tool is for personal use. You must have the right to use any content you pr
 
 ```bash
 # Install as a UV tool (recommended)
-uv tool install git+https://github.com/yourusername/mela_parser.git
+uv tool install git+https://github.com/gwhthompson/mela_parser.git
 
 # Or install from local directory
 cd mela_parser
