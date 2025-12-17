@@ -116,9 +116,16 @@ class TestRecipeQuality:
         )
 
 
-@pytest.mark.parametrize("epub_path", get_available_epubs(), ids=lambda p: p.stem)
+@pytest.mark.parametrize(
+    "epub_path",
+    get_available_epubs()
+    or [pytest.param(None, marks=pytest.mark.skip(reason="No EPUBs available"))],
+    ids=lambda p: p.stem if p else "no-epubs",
+)
 def test_each_epub_extracts(epub_path: Path):
     """Each available EPUB should extract successfully."""
+    if epub_path is None:
+        pytest.skip("No EPUBs available")
     results = run_extraction(epub_path)
     assert results["exit_code"] == 0, f"Failed to extract {epub_path.name}"
     assert results["written"] > 0, f"No recipes written from {epub_path.name}"
