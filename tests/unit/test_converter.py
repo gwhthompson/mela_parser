@@ -269,7 +269,7 @@ class TestConvertEpubByChapters:
         monkeypatch.setattr("ebooklib.epub.read_epub", lambda *a, **kw: mock_book)
         monkeypatch.setattr("markitdown.MarkItDown", lambda: mock_md)
 
-        book, chapters = convert_epub_by_chapters("test.epub")
+        _, chapters = convert_epub_by_chapters("test.epub")
 
         assert len(chapters) == 3
         assert [c.index for c in chapters] == [0, 1, 2]

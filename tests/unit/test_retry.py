@@ -233,8 +233,14 @@ class TestWithRetryConfigIntegration:
         config = RetryConfig(max_attempts=2, initial_delay=0.01)
         call_count = 0
 
-        # Note: retryable must be passed separately as it's not in RetryConfig
-        @with_retry(**config.to_kwargs(), retryable=(ValueError,))
+        # Pass arguments explicitly for type safety
+        @with_retry(
+            max_attempts=config.max_attempts,
+            initial_delay=config.initial_delay,
+            max_delay=config.max_delay,
+            exponential_base=config.exponential_base,
+            retryable=(ValueError,),
+        )
         async def func() -> str:
             nonlocal call_count
             call_count += 1

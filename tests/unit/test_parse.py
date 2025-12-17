@@ -120,8 +120,8 @@ class TestMelaRecipe:
             cookTime=30,
             totalTime=45,
             ingredients=[
-                {"title": "Main", "ingredients": ["400g flour", "2 eggs"]},
-                {"title": "Sauce", "ingredients": ["100ml cream"]},
+                IngredientGroup(title="Main", ingredients=["400g flour", "2 eggs"]),
+                IngredientGroup(title="Sauce", ingredients=["100ml cream"]),
             ],
             instructions=["Prepare.", "Cook.", "Serve."],
             notes="Best served warm.",
@@ -131,13 +131,15 @@ class TestMelaRecipe:
         assert recipe.title == "Full Recipe"
         assert recipe.prepTime == 15
         assert recipe.cookTime == 30
+        assert recipe.categories is not None
         assert len(recipe.categories) == 2
 
     def test_requires_title(self) -> None:
         """Recipe requires a title."""
         with pytest.raises(ValidationError):
             MelaRecipe(
-                ingredients=[{"title": "", "ingredients": ["1 cup"]}],
+                title="",  # Empty title should fail validation
+                ingredients=[IngredientGroup(title="", ingredients=["1 cup"])],
                 instructions=["Step 1.", "Step 2."],
             )
 
@@ -155,7 +157,7 @@ class TestMelaRecipe:
         with pytest.raises(ValidationError):
             MelaRecipe(
                 title="One Step",
-                ingredients=[{"title": "", "ingredients": ["1 cup"]}],
+                ingredients=[IngredientGroup(title="", ingredients=["1 cup"])],
                 instructions=["Only one step."],
             )
 
@@ -286,12 +288,12 @@ class TestCookbookRecipes:
         """CookbookRecipes can store multiple recipes."""
         recipe1 = MelaRecipe(
             title="Recipe 1",
-            ingredients=[{"title": "", "ingredients": ["1 cup"]}],
+            ingredients=[IngredientGroup(title="", ingredients=["1 cup"])],
             instructions=["Step 1.", "Step 2."],
         )
         recipe2 = MelaRecipe(
             title="Recipe 2",
-            ingredients=[{"title": "", "ingredients": ["2 cups"]}],
+            ingredients=[IngredientGroup(title="", ingredients=["2 cups"])],
             instructions=["Do this.", "Do that."],
         )
 
@@ -310,7 +312,7 @@ class TestCookbookRecipes:
         recipes = [
             MelaRecipe(
                 title=f"Recipe {i}",
-                ingredients=[{"title": "", "ingredients": ["1 cup"]}],
+                ingredients=[IngredientGroup(title="", ingredients=["1 cup"])],
                 instructions=["Step 1.", "Step 2."],
             )
             for i in range(16)
@@ -327,7 +329,7 @@ class TestRecipeModelSerialization:
         """Recipe can be serialized to dictionary."""
         recipe = MelaRecipe(
             title="Test",
-            ingredients=[{"title": "Main", "ingredients": ["1 cup flour"]}],
+            ingredients=[IngredientGroup(title="Main", ingredients=["1 cup flour"])],
             instructions=["Mix.", "Bake."],
             categories=[Category.Baking],
         )
@@ -341,7 +343,7 @@ class TestRecipeModelSerialization:
         """Recipe can be serialized to JSON string."""
         recipe = MelaRecipe(
             title="JSON Test",
-            ingredients=[{"title": "", "ingredients": ["1 item"]}],
+            ingredients=[IngredientGroup(title="", ingredients=["1 item"])],
             instructions=["Step 1.", "Step 2."],
         )
         json_str = recipe.model_dump_json()

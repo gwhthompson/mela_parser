@@ -97,6 +97,7 @@ class MelaRecipe(BaseModel):
     """
 
     title: str = Field(
+        min_length=1,
         description=(
             "The complete recipe name exactly as written in the text. "
             "Do not add alternative names or translations."
@@ -104,13 +105,13 @@ class MelaRecipe(BaseModel):
         examples=["Chilli Fish with Tahini", "Roasted Cauliflower & Hazelnut Salad"],
     )
     text: str | None = Field(
-        None,
+        default=None,
         description=(
             "Optional introduction or description paragraph that appears before the ingredients"
         ),
     )
     images: list[str] | None = Field(
-        None,
+        default=None,
         description=(
             "Optional list of image paths from markdown (e.g., ['../images/pg_65.jpg']). "
             "Extract paths from markdown image syntax like "
@@ -124,7 +125,7 @@ class MelaRecipe(BaseModel):
     # Using 'recipeYield' instead of 'yield' to avoid JSON schema issues
     # with reserved keywords
     recipeYield: str | None = Field(  # noqa: N815
-        None,
+        default=None,
         description=(
             "Number of servings or yield "
             "(e.g., 'Serves 4', '12 cookies', '1 loaf'). Leave null if not stated."
@@ -132,7 +133,7 @@ class MelaRecipe(BaseModel):
         examples=["Serves 4", "Makes 12", "6-8 servings"],
     )
     prepTime: int | None = Field(  # noqa: N815
-        None,
+        default=None,
         description=(
             "Preparation time in minutes. Convert hours to minutes "
             "(e.g., '1 hour' becomes 60). Leave null if not stated."
@@ -140,14 +141,14 @@ class MelaRecipe(BaseModel):
         examples=[15, 30, 60],
     )
     cookTime: int | None = Field(  # noqa: N815
-        None,
+        default=None,
         description=(
             "Cooking/baking time in minutes. Convert hours to minutes. Leave null if not stated."
         ),
         examples=[20, 45, 90],
     )
     totalTime: int | None = Field(  # noqa: N815
-        None,
+        default=None,
         description=("Total time from start to finish in minutes. Leave null if not stated."),
         examples=[35, 75, 150],
     )
@@ -185,13 +186,13 @@ class MelaRecipe(BaseModel):
         ],
     )
     notes: str | None = Field(
-        None,
+        default=None,
         description=(
             "Optional notes, tips, variations, or storage instructions that appear after the recipe"
         ),
     )
     categories: list[Category] | None = Field(
-        None,
+        default=None,
         description=(
             "Recipe categories (e.g., Mains, Desserts, Vegetarian). "
             "Select from the available enum values."

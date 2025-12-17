@@ -115,7 +115,7 @@ class ExtractionConfig:
             raise ConfigurationError(
                 f"Invalid model: {self.model}",
                 model=self.model,
-                valid_models=list(valid_models),
+                valid_models=", ".join(valid_models),
             )
 
         # Validate temperature
@@ -428,7 +428,7 @@ class ExtractionConfig:
                 raise ConfigurationError(
                     f"Unknown configuration key: {key}",
                     key=key,
-                    valid_keys=list(self.__dataclass_fields__.keys()),
+                    valid_keys=", ".join(self.__dataclass_fields__.keys()),
                 )
 
         # Revalidate after update
