@@ -7,53 +7,39 @@ from mela_parser.parse import CookbookParser
 
 logging.basicConfig(level=logging.INFO)
 
-# Sample containing 2 clear recipes
+# Generic sample containing 2 clear recipes
 sample_markdown = """
-# A Modern Way to Eat
+# Sample Cookbook
 
-## Breakfasts
+## Breakfast
 
-### Overnight Bircher with peaches
+### Simple Porridge
 
-Weekday breakfasts for me are usually two bleary minutes before I run out of the door.
+A warming start to the day.
 
 SERVES 2
 
 100g oats
-2 tablespoons white chia seeds
-1 tablespoon pumpkin seeds
-350ml milk of your choice (I use almond or coconut)
-1 tablespoon maple syrup
-a dash of all-natural vanilla extract
-a little squeeze of lemon juice
-2 ripe peaches
+400ml water or milk
+pinch of salt
+honey to serve
 
-The night before, put the oats, chia seeds and pumpkin seeds into a bowl or container, pour over the milk, maple syrup, vanilla and lemon juice and stir well.
+Put the oats in a pan with the liquid and salt. Bring to a simmer, stirring often.
+Cook for 4-5 minutes until thick and creamy. Serve with honey.
 
-In the morning, chop the peaches into little chunks, squeeze over a little more lemon and either layer into two glasses with the Bircher or just stir through.
+### Scrambled Eggs
 
-###Turkish fried eggs
-
-This is a really good weekend breakfast, easily quick enough to squeeze in on weekdays too.
+Quick and satisfying.
 
 SERVES 2
 
-4 tablespoons Greek yoghurt
-a good pinch of sea salt
-a good knob of butter
-4 organic or free-range eggs
-2 wholemeal pittas or flatbreads
-1 teaspoon Turkish chilli flakes
-a good pinch of sumac
-a few sprigs of fresh mint, parsley and dill, leaves picked and chopped
+4 eggs
+knob of butter
+salt and pepper
+toast to serve
 
-Mix the yoghurt and salt in a bowl and leave to one side.
-
-Heat the butter in a large non-stick frying pan on a medium heat. Allow it to begin to brown, then crack in the eggs and cook to your liking.
-
-Once your eggs are ready, quickly toast your pittas or flatbreads then top with a good spoonful of yoghurt, then your eggs.
-
-Sprinkle over the chilli flakes, sumac and herbs and eat straight away.
+Beat the eggs with seasoning. Melt butter in a pan over low heat.
+Add eggs and stir gently until just set. Serve on toast.
 """
 
 print("Testing with sample markdown...")
