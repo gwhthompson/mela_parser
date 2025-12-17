@@ -13,9 +13,66 @@ context windows (e.g., 256K tokens) but may need chunking for extremely large
 cookbooks.
 """
 
-import logging
+from __future__ import annotations
 
+import logging
+from io import BytesIO
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import ebooklib
+from ebooklib import epub
 from markitdown import MarkItDown
+
+if TYPE_CHECKING:
+    from .chapter_extractor import Chapter
+
+logger = logging.getLogger(__name__)
+
+
+def convert_epub_by_chapters(epub_path: str | Path) -> tuple[epub.EpubBook, list[Chapter]]:
+    """Convert each EPUB chapter to markdown.
+
+    Reads an EPUB file and converts each document item (chapter) to markdown
+    format using MarkItDown for LLM-friendly text processing.
+
+    This function is designed for use in the pipeline architecture without
+    UI dependencies - progress tracking should be handled by the caller.
+
+    Args:
+        epub_path: Path to the EPUB file to convert.
+
+    Returns:
+        A tuple containing:
+            - EpubBook object with metadata and images
+            - List of Chapter objects with markdown content
+
+    Raises:
+        FileNotFoundError: If the EPUB file doesn't exist.
+        Exception: If the EPUB file is corrupted or cannot be read.
+
+    Example:
+        >>> book, chapters = convert_epub_by_chapters("cookbook.epub")
+        >>> print(f"Found {len(chapters)} chapters")
+    """
+    from .chapter_extractor import Chapter
+
+    book = epub.read_epub(str(epub_path), {"ignore_ncx": True})
+    md = MarkItDown()
+
+    items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+    chapters: list[Chapter] = []
+
+    for i, item in enumerate(items):
+        html_content = item.get_content()
+        result = md.convert_stream(BytesIO(html_content), file_extension=".html")
+        markdown_content = result.text_content
+
+        chapter_name = item.get_name()
+        chapters.append(Chapter(name=chapter_name, content=markdown_content, index=i))
+
+    logger.info(f"Converted {len(chapters)} chapters to markdown")
+    return book, chapters
 
 
 class EpubConverter:

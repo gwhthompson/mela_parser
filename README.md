@@ -53,7 +53,7 @@ mela_parser/
 │   ├── recipe.py           # Recipe processing and EPUB handling
 │   ├── converter.py        # EPUB to Markdown conversion
 │   ├── chapter_extractor.py # Chapter-based extraction pipeline
-│   ├── prompt_library.py   # Prompt templates
+│   ├── validator.py        # Recipe quality validation
 │   └── image_processor.py  # Image extraction and processing
 ├── tests/                  # Test suite
 ├── examples/              # Sample cookbooks and outputs

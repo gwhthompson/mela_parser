@@ -272,39 +272,22 @@ class RecipeValidator:
     def detect_component_recipe(self, recipe: MelaRecipe) -> bool:
         """Detect if recipe is a component/sub-recipe that should be excluded.
 
-        Component recipes are typically sauces, marinades, or toppings that are
-        listed separately but are meant to be part of a larger recipe.
+        Uses the is_standalone_recipe field from the schema, which is set by the
+        LLM during extraction when it has full context.
 
         Args:
             recipe: Recipe to check
 
         Returns:
-            True if recipe appears to be a component
+            True if recipe appears to be a component (is_standalone_recipe=False)
 
         Example:
-            >>> recipe = MelaRecipe(title="For the sauce:", ...)
+            >>> recipe = MelaRecipe(title="For the sauce:", is_standalone_recipe=False, ...)
             >>> validator.detect_component_recipe(recipe)
             True
         """
-        if not recipe.title:
-            return False
-
-        title_lower = recipe.title.lower()
-
-        # Component indicators
-        component_patterns = [
-            "for the ",
-            "for ",
-            "sauce:",
-            "marinade:",
-            "dressing:",
-            "topping:",
-            "garnish:",
-            "crumble",
-            "cream",
-        ]
-
-        return any(pattern in title_lower for pattern in component_patterns)
+        # Use the LLM's classification from the schema
+        return not recipe.is_standalone_recipe
 
     def validate_ingredients(self, ingredient_groups: list[IngredientGroup]) -> bool:
         """Validate that ingredients have proper measurements.

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = {text = "MIT"}
 authors = [
-    {name = "Mela Parser Contributors"}
+    {name = "gwhthompson"}
 ]
 keywords = ["recipe", "epub", "parser", "mela", "cookbook"]
 classifiers = [
@@ -36,10 +36,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/mela_parser"
-Repository = "https://github.com/yourusername/mela_parser.git"
-Issues = "https://github.com/yourusername/mela_parser/issues"
-Documentation = "https://github.com/yourusername/mela_parser#readme"
+Homepage = "https://github.com/gwhthompson/mela_parser"
+Repository = "https://github.com/gwhthompson/mela_parser.git"
+Issues = "https://github.com/gwhthompson/mela_parser/issues"
+Documentation = "https://github.com/gwhthompson/mela_parser#readme"
 
 [project.optional-dependencies]
 dev = [
@@ -106,13 +106,6 @@ convention = "google"
     "E501",   # Allow longer lines in tests
     "D",      # Don't require docstrings in tests
     "ANN",    # Don't require type annotations in tests
-]
-"debug*.py" = [
-    "D",      # Don't require docstrings in debug scripts
-    "ANN",    # Don't require type annotations in debug scripts
-]
-"src/mela_parser/prompt_library.py" = [
-    "E501",   # Allow longer lines for prompt strings
 ]
 
 [tool.basedpyright]

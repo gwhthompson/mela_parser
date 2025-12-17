@@ -188,3 +188,73 @@ class DeduplicationError(MelaParserError):
     """
 
     pass
+
+
+class RetryableError(MelaParserError):
+    """Error that might succeed if retried.
+
+    This exception indicates a transient failure that may resolve on retry,
+    such as rate limits, temporary API unavailability, or network issues.
+
+    Attributes:
+        attempt: Current attempt number (1-indexed)
+        max_attempts: Maximum number of attempts allowed
+        retry_after: Suggested delay before next retry (seconds)
+
+    Example:
+        >>> raise RetryableError(
+        ...     "API rate limit exceeded",
+        ...     attempt=2,
+        ...     max_attempts=3,
+        ...     retry_after=60.0
+        ... )
+    """
+
+    def __init__(
+        self,
+        message: str,
+        attempt: int = 1,
+        max_attempts: int = 3,
+        retry_after: float = 1.0,
+        **context: str | int | float | bool | None,
+    ) -> None:
+        """Initialize retryable error with retry metadata.
+
+        Args:
+            message: Human-readable error description
+            attempt: Current attempt number (1-indexed)
+            max_attempts: Maximum number of attempts allowed
+            retry_after: Suggested delay before next retry (seconds)
+            **context: Additional context
+        """
+        super().__init__(message, **context)
+        self.attempt = attempt
+        self.max_attempts = max_attempts
+        self.retry_after = retry_after
+
+    @property
+    def should_retry(self) -> bool:
+        """Check if another retry attempt should be made."""
+        return self.attempt < self.max_attempts
+
+    def with_next_attempt(self, backoff_multiplier: float = 2.0) -> "RetryableError":
+        """Create a new error for the next retry attempt.
+
+        Args:
+            backoff_multiplier: Multiplier for retry_after delay
+
+        Returns:
+            New RetryableError with incremented attempt and backoff
+        """
+        return RetryableError(
+            self.message,
+            attempt=self.attempt + 1,
+            max_attempts=self.max_attempts,
+            retry_after=self.retry_after * backoff_multiplier,
+            **self.context,
+        )
+
+    def __str__(self) -> str:
+        """Format error with retry information."""
+        base = super().__str__()
+        return f"{base} [attempt {self.attempt}/{self.max_attempts}]"

@@ -197,6 +197,15 @@ class MelaRecipe(BaseModel):
             "Select from the available enum values."
         ),
     )
+    is_standalone_recipe: bool = Field(
+        default=True,
+        description=(
+            "True if this is a complete, standalone recipe that can be cooked independently. "
+            "False if this is a component/sub-recipe (e.g., 'For the sauce', 'Dough', 'Glaze', "
+            "'Marinade', 'Frosting') that's typically part of another dish or exists to be "
+            "referenced by other recipes. When in doubt, set to True."
+        ),
+    )
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -252,6 +261,76 @@ class RecipeParser:
             raise
 
 
+class ChapterTitles(BaseModel):
+    """Lightweight enumeration of recipe titles in a chapter.
+
+    Stage 1 of Title-Grounded Extraction: enumerate all recipe titles
+    without extracting full content. This allows verification that each
+    title exists in the source content before attempting extraction.
+    """
+
+    titles: list[str] = Field(
+        default_factory=list,
+        description=(
+            "All recipe titles in this chapter, exactly as written in the text. "
+            "A recipe has: title, ingredients with measurements, and cooking instructions. "
+            "Do NOT include: section headers, chapter titles, cross-references, "
+            "or component names that appear within a recipe (e.g., 'For the sauce')."
+        ),
+    )
+    chapter_type: str = Field(
+        default="recipes",
+        description=(
+            "Type of chapter content: 'recipes' for recipe chapters, "
+            "'intro' for introductions/forewords, 'index' for indexes, "
+            "'basics' for technique/basics chapters, 'toc' for table of contents."
+        ),
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TOCEntry(BaseModel):
+    """A single entry in the table of contents."""
+
+    chapter_title: str = Field(description="Chapter or section title exactly as written")
+    recipes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Recipe titles listed under this chapter/section. "
+            "Only include actual recipe names, not sub-section headers."
+        ),
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CookbookTOC(BaseModel):
+    """Table of contents with chapter-recipe mapping.
+
+    Used as ground truth for verification - comparing extracted recipes
+    against TOC entries reveals missing or extra extractions.
+    """
+
+    chapters: list[TOCEntry] = Field(
+        default_factory=list,
+        description="List of chapters/sections with their recipe titles",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+    def all_recipe_titles(self) -> list[str]:
+        """Get all recipe titles from all chapters."""
+        return [title for chapter in self.chapters for title in chapter.recipes]
+
+    def recipes_for_chapter(self, chapter_title: str) -> list[str]:
+        """Get recipe titles for a specific chapter."""
+        for chapter in self.chapters:
+            if chapter.chapter_title.lower() == chapter_title.lower():
+                return chapter.recipes
+        return []
+
+
 class CookbookRecipes(BaseModel):
     """Schema for extracting multiple recipes from a cookbook section.
 
@@ -275,6 +354,15 @@ class CookbookRecipes(BaseModel):
             "True if there are more recipes after this batch that couldn't fit "
             "due to output token limits. False if this is the last batch or "
             "no more recipes exist."
+        ),
+    )
+    last_content_marker: str | None = Field(
+        default=None,
+        description=(
+            "If has_more=True, provide a unique snippet of 50-100 characters from the "
+            "content immediately after the last recipe's final instruction. This marker "
+            "is used to find the continuation point for the next batch. Leave null if "
+            "has_more=False."
         ),
     )
 

@@ -194,16 +194,21 @@ class TestRecipeValidator:
         assert is_continuation
 
     def test_detect_component_recipe(self, validator):
-        """Detect component recipes that should be excluded."""
+        """Detect component recipes using is_standalone_recipe schema field.
+
+        Component detection now relies on the is_standalone_recipe field
+        from the schema, which is set by the LLM during extraction.
+        """
         test_cases = [
             "For the sauce:",
             "For the marinade",
             "Garlic sauce:",
             "Basic marinade:",
-            "For the crumble",  # Changed from "Chocolate ganache"
+            "For the crumble",
         ]
 
         for title in test_cases:
+            # Component recipes have is_standalone_recipe=False
             recipe = MelaRecipe(
                 title=title,
                 recipeYield=None,
@@ -216,6 +221,7 @@ class TestRecipeValidator:
                 instructions=["Heat butter in pan", "Add garlic and simmer"],
                 images=[],
                 categories=[],
+                is_standalone_recipe=False,  # Mark as component
             )
 
             is_component = validator.detect_component_recipe(recipe)
@@ -223,6 +229,23 @@ class TestRecipeValidator:
 
             score = validator.score_recipe(recipe)
             assert score.is_component
+
+        # Verify standalone recipes are NOT detected as components
+        standalone_recipe = MelaRecipe(
+            title="Roasted Chicken",
+            recipeYield="Serves 4",
+            prepTime=15,
+            cookTime=60,
+            totalTime=75,
+            ingredients=[
+                IngredientGroup(title="", ingredients=["1 whole chicken", "2 tbsp olive oil"])
+            ],
+            instructions=["Preheat oven", "Season chicken", "Roast for 1 hour"],
+            images=[],
+            categories=[],
+            is_standalone_recipe=True,  # Mark as standalone
+        )
+        assert not validator.detect_component_recipe(standalone_recipe)
 
     def test_validate_ingredients_with_measurements(self, validator):
         """Ingredients with measurements are valid."""

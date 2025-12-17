@@ -2,27 +2,28 @@
 """CLI for mela-parser: Extract recipes from EPUB cookbooks to Mela format.
 
 This module provides the command-line interface for extracting recipes from EPUB
-cookbooks using chapter-based extraction with parallel async processing for
-maximum speed and efficiency.
+cookbooks using chapter-based extraction with parallel async processing.
 
-The CLI supports various OpenAI models and allows customization of output
-directories and image extraction options.
+The CLI is responsible for:
+- Argument parsing
+- Progress display (Rich UI)
+- Error presentation
+- Calling the pipeline for business logic
+
+The actual extraction logic is delegated to the pipeline architecture.
 """
+
+from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import logging
 import os
 import shutil
 import time
-import uuid
 import warnings
-from io import BytesIO, StringIO
 from pathlib import Path
 
-import ebooklib
-from ebooklib import epub
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
@@ -35,12 +36,10 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from .chapter_extractor import AsyncChapterExtractor, Chapter
-from .recipe import RecipeProcessor
-
-# Suppress python-dotenv warnings during markitdown import
-with contextlib.redirect_stderr(StringIO()):
-    from markitdown import MarkItDown
+from .config import ExtractionConfig
+from .pipeline import PipelineContext, create_default_pipeline
+from .repository import slugify
+from .services import ServiceFactory
 
 # Suppress noisy warnings from dependencies
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
@@ -66,73 +65,23 @@ def setup_logging(log_file: str = "mela_parser.log") -> None:
     )
 
 
-def convert_epub_by_chapters(epub_path: str) -> tuple[epub.EpubBook, list[tuple[str, str]]]:
-    """Convert each EPUB chapter to markdown.
-
-    Reads an EPUB file and converts each document item (chapter) to markdown
-    format using MarkItDown for LLM-friendly text processing.
-
-    Args:
-        epub_path: Path to the EPUB file to convert.
-
-    Returns:
-        A tuple containing:
-            - EpubBook object with metadata and images
-            - List of tuples, each containing (chapter_name, markdown_content)
-
-    Raises:
-        FileNotFoundError: If the EPUB file doesn't exist.
-        Exception: If the EPUB file is corrupted or cannot be read.
-    """
-    book = epub.read_epub(epub_path, {"ignore_ncx": True})
-    md = MarkItDown()
-
-    items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
-
-    chapters: list[tuple[str, str]] = []
-
-    with Progress(
+def create_progress() -> Progress:
+    """Create a Rich progress bar with standard configuration."""
+    return Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
         console=console,
-    ) as progress:
-        task = progress.add_task("Converting chapters to markdown", total=len(items))
-
-        for item in items:
-            html_content = item.get_content()
-            result = md.convert_stream(BytesIO(html_content), file_extension=".html")
-            markdown_content = result.text_content
-
-            chapter_name = item.get_name()
-            chapters.append((chapter_name, markdown_content))
-            progress.update(task, advance=1)
-
-    logging.info(f"Converted {len(chapters)} chapters to markdown")
-    console.print(f"[green]✓[/green] Converted {len(chapters)} chapters to markdown")
-    return book, chapters
+    )
 
 
-async def main_async() -> None:
-    """Main async function for parallel recipe extraction processing.
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments.
 
-    This is the core async function that orchestrates the entire extraction
-    workflow:
-    1. Parse command-line arguments
-    2. Convert EPUB chapters to markdown
-    3. Extract recipes from chapters in parallel
-    4. Deduplicate recipes
-    5. Write recipes to output directory
-    6. Create .melarecipes archive
-
-    The function uses high concurrency (200 parallel requests) for optimal
-    performance with modern LLM APIs.
-
-    Raises:
-        FileNotFoundError: If the EPUB file doesn't exist.
-        Exception: If any step in the extraction pipeline fails.
+    Returns:
+        Parsed command-line arguments.
     """
     parser = argparse.ArgumentParser(
         description="Extract recipes from EPUB cookbooks to Mela format", prog="mela-parse"
@@ -149,264 +98,41 @@ async def main_async() -> None:
         "--output-dir", type=str, default="output", help="Output directory (default: output)"
     )
     parser.add_argument("--no-images", action="store_true", help="Skip image extraction")
+    return parser.parse_args()
 
-    args = parser.parse_args()
 
-    if not os.path.exists(args.epub_path):
-        console.print()
-        console.print(
-            Panel(
-                f"[bold red]File not found:[/bold red]\n{args.epub_path}\n\n"
-                f"[dim]Please check the file path and try again.[/dim]",
-                title="[bold red]Error[/bold red]",
-                border_style="red",
-            )
-        )
-        console.print()
-        parser.exit(1)
-
-    setup_logging()
-
-    start_time = time.time()
-
-    # Get metadata
-    book_temp = epub.read_epub(args.epub_path, {"ignore_ncx": True})
-    book_title = book_temp.get_metadata("DC", "title")[0][0]
-    book_slug = RecipeProcessor.slugify(book_title)
-
-    # Log to file
-    logging.info("=" * 80)
-    logging.info(f"Processing: {book_title}")
-    logging.info("Method: Chapter-based extraction")
-    logging.info("=" * 80)
-
-    # Display to console with Rich
+def display_header(book_title: str) -> None:
+    """Display the header panel with book information."""
     console.print()
     console.print(
         Panel.fit(
-            f"[bold cyan]{book_title}[/bold cyan]\n[dim]Method: Chapter-based extraction[/dim]",
+            f"[bold cyan]{book_title}[/bold cyan]\n[dim]Method: Pipeline extraction[/dim]",
             title="[bold]Mela Recipe Parser[/bold]",
             border_style="cyan",
         )
     )
     console.print()
 
-    # PHASE 1: Convert chapters
-    logging.info("\nPHASE 1: Converting chapters")
-    console.print(
-        Panel("[bold]Phase 1:[/bold] Converting chapters to markdown", border_style="blue")
-    )
-    book, chapters = convert_epub_by_chapters(args.epub_path)
 
-    # PHASE 2: Extract from all chapters
-    logging.info("\nPHASE 2: Extracting from chapters (PARALLEL)")
+def display_phase(phase_num: int, description: str) -> None:
+    """Display a phase header."""
     console.print()
-    console.print(
-        Panel(
-            "[bold]Phase 2:[/bold] Extracting recipes from chapters (parallel)", border_style="blue"
-        )
-    )
+    console.print(Panel(f"[bold]Phase {phase_num}:[/bold] {description}", border_style="blue"))
 
-    # Convert to Chapter objects
-    chapter_objs = [
-        Chapter(name=name, content=content, index=i) for i, (name, content) in enumerate(chapters)
-    ]
 
-    # Extract recipes with high concurrency and progress tracking
-    extractor = AsyncChapterExtractor(model=args.model)
-
-    # Create a mapping of chapter names to original Chapter objects for retries
-    chapter_map = {chapter.name: chapter for chapter in chapter_objs}
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        extract_task = progress.add_task(
-            "Extracting recipes from chapters", total=len(chapter_objs)
-        )
-
-        # Use a wrapper to track progress
-        extraction_results = []
-        failed_chapter_names = []
-        retry_count = 0
-
-        try:
-            # First attempt
-            results = await extractor.extract_from_chapters(
-                chapters=chapter_objs, expected_titles=None, max_concurrent=200
-            )
-
-            # Check for failures
-            for result in results:
-                if (
-                    result.recipes
-                    or result.chapter_name.startswith("nav")
-                    or "toc" in result.chapter_name.lower()
-                ):
-                    extraction_results.append(result)
-                else:
-                    failed_chapter_names.append(result.chapter_name)
-                progress.update(extract_task, advance=1)
-
-            # Auto-retry failed chapters (max 2 retries)
-            if failed_chapter_names and retry_count < 2:
-                retry_count += 1
-                fail_count = len(failed_chapter_names)
-                attempt_num = retry_count + 1
-                progress.update(
-                    extract_task,
-                    description=(
-                        f"[yellow]Retrying {fail_count} failed chapters "
-                        f"(attempt {attempt_num})[/yellow]"
-                    ),
-                )
-                console.print(
-                    f"[yellow]⚠[/yellow] Retrying {fail_count} chapters that had no recipes..."
-                )
-                logging.info(f"Retrying {fail_count} failed chapters (attempt {attempt_num})")
-
-                # Retry failed chapters using original Chapter objects
-                retry_chapters = [
-                    chapter_map[name] for name in failed_chapter_names if name in chapter_map
-                ]
-                retry_results = await extractor.extract_from_chapters(
-                    chapters=retry_chapters, expected_titles=None, max_concurrent=200
-                )
-
-                # Add successful retries to results
-                for retry_result in retry_results:
-                    if retry_result.recipes:
-                        extraction_results.append(retry_result)
-                        console.print(
-                            f"[green]✓[/green] Retry successful: {retry_result.chapter_name}"
-                        )
-                        logging.info(f"Retry successful: {retry_result.chapter_name}")
-
-        except Exception as e:
-            console.print(f"[red]✗[/red] Error during extraction: {e}")
-            logging.error(f"Error during extraction: {e}")
-            raise
-
-    # Flatten all recipes from all chapters
-    all_recipes = []
-    for result in extraction_results:
-        all_recipes.extend(result.recipes)
-        if result.recipes:
-            console.print(
-                f"  [green]✓[/green] {result.chapter_name}: {len(result.recipes)} recipes"
-            )
-            logging.info(f"{result.chapter_name}: ✓ {len(result.recipes)} recipes")
-        else:
-            console.print(f"  [dim]{result.chapter_name}[/dim]")
-            logging.info(f"{result.chapter_name}")
-
-    console.print()
-    console.print(
-        f"[bold green]✓[/bold green] Total extracted: [bold]{len(all_recipes)}[/bold] recipes"
-    )
-    logging.info(f"\nTotal extracted: {len(all_recipes)} recipes")
-
-    # PHASE 3: Deduplication
-    logging.info("\nPHASE 3: Deduplication")
-    console.print()
-    console.print(Panel("[bold]Phase 3:[/bold] Removing duplicate recipes", border_style="blue"))
-
-    seen: set[str] = set()
-    unique_recipes = []
-    duplicates = 0
-
-    for recipe in all_recipes:
-        if recipe.title not in seen:
-            seen.add(recipe.title)
-            unique_recipes.append(recipe)
-        else:
-            duplicates += 1
-            logging.debug(f"  Duplicate: {recipe.title}")
-
-    if duplicates > 0:
-        console.print(f"[yellow]⚠[/yellow] Removed {duplicates} duplicate(s)")
-    console.print(f"[green]✓[/green] {len(all_recipes)} → {len(unique_recipes)} unique recipes")
-    logging.info(f"Total: {len(all_recipes)} → Unique: {len(unique_recipes)}")
-
-    # PHASE 4: Write recipes
-    logging.info("\nPHASE 4: Writing recipes")
-    console.print()
-    console.print(Panel("[bold]Phase 4:[/bold] Writing recipes to disk", border_style="blue"))
-
-    out_dir = Path(args.output_dir) / book_slug
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    processor = RecipeProcessor(args.epub_path, book)
-    written = 0
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        write_task = progress.add_task("Writing recipes", total=len(unique_recipes))
-
-        for recipe in unique_recipes:
-            recipe_dict = processor._mela_recipe_to_object(recipe)
-            recipe_dict["link"] = book_title
-            recipe_dict["id"] = str(uuid.uuid4())
-
-            # Pass through image paths from extracted recipe for processing
-            if recipe.images:
-                recipe_dict["images"] = recipe.images
-                processor._process_images(recipe_dict)
-            else:
-                recipe_dict["images"] = []
-
-            if processor.write_recipe(recipe_dict, output_dir=str(out_dir)):
-                written += 1
-            progress.update(write_task, advance=1)
-
-    console.print(f"[green]✓[/green] Wrote {written} recipes to {out_dir}")
-
-    # Create archive
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        progress.add_task("Creating .melarecipes archive", total=None)
-        archive_zip = shutil.make_archive(
-            base_name=str(out_dir), format="zip", root_dir=str(out_dir)
-        )
-        archive_mela = archive_zip.replace(".zip", ".melarecipes")
-        os.rename(archive_zip, archive_mela)
-
-    console.print(f"[green]✓[/green] Created archive: {archive_mela}")
-
-    # Summary
-    elapsed_time = time.time() - start_time
-
-    # Format time as minutes and seconds
+def display_summary(
+    chapters_count: int,
+    extracted_count: int,
+    unique_count: int,
+    written_count: int,
+    elapsed_time: float,
+    archive_path: str,
+) -> None:
+    """Display the completion summary table."""
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
     time_formatted = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
 
-    logging.info("\n" + "=" * 80)
-    logging.info("COMPLETE")
-    logging.info("=" * 80)
-    logging.info(f"Chapters: {len(chapters)}")
-    logging.info(f"Extracted: {len(all_recipes)}")
-    logging.info(f"Unique: {len(unique_recipes)}")
-    logging.info(f"Written: {written}")
-    logging.info(f"Time: {elapsed_time:.1f}s")
-    logging.info(f"Output: {archive_mela}")
-
-    # Create summary table
     console.print()
     summary_table = Table(
         title="[bold green]✓ Processing Complete[/bold green]",
@@ -416,16 +142,150 @@ async def main_async() -> None:
     summary_table.add_column("Metric", style="cyan", width=20)
     summary_table.add_column("Value", style="green", justify="right")
 
-    summary_table.add_row("Chapters Processed", str(len(chapters)))
-    summary_table.add_row("Recipes Extracted", str(len(all_recipes)))
-    summary_table.add_row("Unique Recipes", str(len(unique_recipes)))
-    summary_table.add_row("Recipes Written", str(written))
+    summary_table.add_row("Chapters Processed", str(chapters_count))
+    summary_table.add_row("Recipes Extracted", str(extracted_count))
+    summary_table.add_row("Unique Recipes", str(unique_count))
+    summary_table.add_row("Recipes Written", str(written_count))
     summary_table.add_row("Processing Time", time_formatted)
 
     console.print(summary_table)
     console.print()
-    console.print(f"[bold]Output:[/bold] [cyan]{archive_mela}[/cyan]")
+    console.print(f"[bold]Output:[/bold] [cyan]{archive_path}[/cyan]")
     console.print()
+
+
+def display_error(title: str, message: str) -> None:
+    """Display an error panel."""
+    console.print()
+    console.print(
+        Panel(
+            message,
+            title=f"[bold red]{title}[/bold red]",
+            border_style="red",
+        )
+    )
+    console.print()
+
+
+async def main_async() -> None:
+    """Main async function for parallel recipe extraction processing.
+
+    Orchestrates the extraction workflow using the pipeline architecture:
+    1. Parse arguments and validate input
+    2. Run pipeline stages (conversion, extraction, deduplication, images, persistence)
+    3. Create archive and display summary
+
+    The actual business logic is delegated to the pipeline stages.
+    """
+    args = parse_args()
+    epub_path = Path(args.epub_path)
+
+    # Validate input file exists
+    if not epub_path.exists():
+        display_error(
+            "Error",
+            f"[bold red]File not found:[/bold red]\n{args.epub_path}\n\n"
+            f"[dim]Please check the file path and try again.[/dim]",
+        )
+        raise SystemExit(1)
+
+    setup_logging()
+    start_time = time.time()
+
+    # Create configuration from args
+    config = ExtractionConfig(
+        model=args.model,
+        extract_images=not args.no_images,
+    )
+
+    # Create service factory and pipeline
+    factory = ServiceFactory(config=config)
+    pipeline = create_default_pipeline()
+
+    # Create pipeline context
+    output_dir = Path(args.output_dir)
+    ctx = PipelineContext(
+        epub_path=epub_path,
+        output_dir=output_dir,
+        config=config,
+    )
+
+    # Get book title for display (before pipeline runs)
+    from ebooklib import epub as epub_lib
+
+    book_temp = epub_lib.read_epub(str(epub_path), {"ignore_ncx": True})
+    book_title = book_temp.get_metadata("DC", "title")[0][0]
+    book_slug = slugify(book_title)
+
+    # Update output_dir to include book slug (so persistence writes to output/{book}/)
+    ctx.output_dir = output_dir / book_slug
+
+    # Log start
+    logging.info("=" * 80)
+    logging.info(f"Processing: {book_title}")
+    logging.info("Method: Pipeline extraction")
+    logging.info("=" * 80)
+
+    display_header(book_title)
+
+    # Run pipeline stages with progress tracking
+    for i, stage in enumerate(pipeline.stages, 1):
+        display_phase(i, stage.name)
+        logging.info(f"\nPHASE {i}: {stage.name}")
+
+        with create_progress() as progress:
+            task = progress.add_task(f"{stage.name}...", total=None)
+            await stage.execute(ctx, factory)
+            progress.update(task, completed=1, total=1)
+
+        # Display stage-specific results
+        if stage.name == "Conversion":
+            console.print(f"[green]✓[/green] Converted {len(ctx.chapters)} chapters")
+        elif stage.name == "Extraction":
+            total_recipes = len(ctx.recipes)
+            console.print(f"[green]✓[/green] Extracted {total_recipes} recipes")
+        elif stage.name == "Deduplication":
+            console.print(f"[green]✓[/green] {len(ctx.unique_recipes)} unique recipes")
+        elif stage.name == "Images":
+            with_images = sum(1 for r in ctx.unique_recipes if r.images)
+            console.print(f"[green]✓[/green] Processed images for {with_images} recipes")
+        elif stage.name == "Persistence":
+            console.print(f"[green]✓[/green] Wrote recipes to {ctx.output_dir}")
+
+    # Create archive
+    display_phase(len(pipeline.stages) + 1, "Creating archive")
+    out_dir = ctx.output_dir
+
+    with create_progress() as progress:
+        progress.add_task("Creating .melarecipes archive", total=None)
+        archive_zip = shutil.make_archive(
+            base_name=str(out_dir), format="zip", root_dir=str(out_dir)
+        )
+        archive_mela = archive_zip.replace(".zip", ".melarecipes")
+        os.rename(archive_zip, archive_mela)
+
+    console.print(f"[green]✓[/green] Created archive: {archive_mela}")
+
+    # Log completion
+    elapsed_time = time.time() - start_time
+    logging.info("\n" + "=" * 80)
+    logging.info("COMPLETE")
+    logging.info("=" * 80)
+    logging.info(f"Chapters: {len(ctx.chapters)}")
+    logging.info(f"Extracted: {len(ctx.recipes)}")
+    logging.info(f"Unique: {len(ctx.unique_recipes)}")
+    logging.info(f"Time: {elapsed_time:.1f}s")
+    logging.info(f"Output: {archive_mela}")
+
+    # Display summary
+    display_summary(
+        chapters_count=len(ctx.chapters),
+        extracted_count=len(ctx.recipes),
+        unique_count=len(ctx.unique_recipes),
+        written_count=len(ctx.unique_recipes),
+        elapsed_time=elapsed_time,
+        archive_path=archive_mela,
+    )
 
 
 def main() -> None:

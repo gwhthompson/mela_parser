@@ -45,7 +45,6 @@ class ExtractionConfig:
         Extraction Settings:
             retry_attempts: Number of retry attempts for failed extractions
             initial_retry_delay: Initial delay before retry (exponential backoff)
-            enable_self_correction: Enable LLM self-correction for incomplete recipes
 
         Image Settings:
             extract_images: Whether to extract and process images
@@ -77,7 +76,13 @@ class ExtractionConfig:
     # Extraction settings
     retry_attempts: int = 3
     initial_retry_delay: float = 1.0
-    enable_self_correction: bool = False
+
+    # Grounded extraction settings (two-stage title-based extraction)
+    extraction_concurrency_per_chapter: int = 20  # Concurrent extractions per chapter
+    extraction_retry_attempts: int = 2  # Stage 2 retry count
+    extraction_retry_delay: float = 0.5  # Base delay for retries (seconds)
+    title_match_threshold: float = 0.85  # Fuzzy title matching threshold
+    max_pagination_pages: int = 10  # Safety limit for legacy pagination
 
     # Image settings
     extract_images: bool = True
@@ -170,6 +175,37 @@ class ExtractionConfig:
             raise ConfigurationError(
                 "similarity_threshold must be between 0.0 and 1.0",
                 similarity_threshold=self.similarity_threshold,
+            )
+
+        # Validate grounded extraction settings
+        if self.extraction_concurrency_per_chapter < 1:
+            raise ConfigurationError(
+                "extraction_concurrency_per_chapter must be at least 1",
+                extraction_concurrency_per_chapter=self.extraction_concurrency_per_chapter,
+            )
+
+        if self.extraction_retry_attempts < 0:
+            raise ConfigurationError(
+                "extraction_retry_attempts must be non-negative",
+                extraction_retry_attempts=self.extraction_retry_attempts,
+            )
+
+        if self.extraction_retry_delay <= 0:
+            raise ConfigurationError(
+                "extraction_retry_delay must be positive",
+                extraction_retry_delay=self.extraction_retry_delay,
+            )
+
+        if not 0.0 < self.title_match_threshold <= 1.0:
+            raise ConfigurationError(
+                "title_match_threshold must be between 0.0 (exclusive) and 1.0",
+                title_match_threshold=self.title_match_threshold,
+            )
+
+        if self.max_pagination_pages < 1:
+            raise ConfigurationError(
+                "max_pagination_pages must be at least 1",
+                max_pagination_pages=self.max_pagination_pages,
             )
 
         # Ensure output_dir is a Path
