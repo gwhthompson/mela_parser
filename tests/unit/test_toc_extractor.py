@@ -4,7 +4,7 @@ Tests TOC/Index chapter finding, prompt building, and parsing.
 """
 
 from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -44,27 +44,30 @@ class TestIndexRecipesModel:
             IndexRecipes(recipe_titles=[], extra_field="not allowed")  # type: ignore[call-arg]
 
 
+@patch("mela_parser.toc_extractor.AsyncOpenAI")
 class TestTOCExtractorInit:
     """Tests for TOCExtractor initialization."""
 
-    def test_init_with_defaults(self) -> None:
+    def test_init_with_defaults(self, mock_openai: MagicMock) -> None:
         """TOCExtractor initializes with default model."""
-        # Note: This creates a real AsyncOpenAI client
         extractor = TOCExtractor()
         assert extractor.model == "gpt-5-nano"
-        assert extractor.client is not None
+        assert extractor.client is mock_openai.return_value
+        mock_openai.assert_called_once()
 
-    def test_init_with_custom_model(self) -> None:
+    def test_init_with_custom_model(self, mock_openai: MagicMock) -> None:
         """TOCExtractor accepts custom model."""
         extractor = TOCExtractor(model="gpt-4o")
         assert extractor.model == "gpt-4o"
 
-    def test_init_with_provided_client(self) -> None:
+    def test_init_with_provided_client(self, mock_openai: MagicMock) -> None:
         """TOCExtractor uses provided client."""
         mock_client = MagicMock()
         extractor = TOCExtractor(client=mock_client, model="custom-model")
         assert extractor.client is mock_client
         assert extractor.model == "custom-model"
+        # Should not create a new client when one is provided
+        mock_openai.assert_not_called()
 
 
 class TestTOCExtractorConstants:

@@ -3,7 +3,7 @@
 Tests ServiceFactory, dependency injection, and service creation.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from mela_parser.config import ExtractionConfig
 from mela_parser.services import ServiceFactory
@@ -26,18 +26,20 @@ class TestServiceFactoryInit:
         assert factory.config.max_concurrent == 50
 
 
+@patch("mela_parser.services.factory.AsyncOpenAI")
 class TestServiceFactoryClient:
     """Tests for ServiceFactory.client property."""
 
-    def test_client_is_created(self) -> None:
+    def test_client_is_created(self, mock_openai: MagicMock) -> None:
         """Client property creates AsyncOpenAI instance."""
         config = ExtractionConfig()
         factory = ServiceFactory(config=config)
         client = factory.client
-        # Can't easily check type without importing openai
-        assert client is not None
+        # Verify mock was called
+        mock_openai.assert_called_once()
+        assert client is mock_openai.return_value
 
-    def test_client_is_cached(self) -> None:
+    def test_client_is_cached(self, mock_openai: MagicMock) -> None:
         """Client property returns same instance on repeated calls."""
         config = ExtractionConfig()
         factory = ServiceFactory(config=config)
@@ -48,10 +50,11 @@ class TestServiceFactoryClient:
         assert client1 is client2
 
 
+@patch("mela_parser.services.factory.AsyncOpenAI")
 class TestServiceFactoryCreateExtractor:
     """Tests for ServiceFactory.create_extractor method."""
 
-    def test_creates_extractor(self) -> None:
+    def test_creates_extractor(self, mock_openai: MagicMock) -> None:
         """create_extractor returns AsyncChapterExtractor."""
         config = ExtractionConfig(model="gpt-5-nano")
         factory = ServiceFactory(config=config)
@@ -63,7 +66,7 @@ class TestServiceFactoryCreateExtractor:
 
         assert isinstance(extractor, AsyncChapterExtractor)
 
-    def test_extractor_uses_config_model(self) -> None:
+    def test_extractor_uses_config_model(self, mock_openai: MagicMock) -> None:
         """Extractor is configured with factory's model."""
         config = ExtractionConfig(model="gpt-4o")
         factory = ServiceFactory(config=config)
@@ -72,7 +75,7 @@ class TestServiceFactoryCreateExtractor:
 
         assert extractor.model == "gpt-4o"
 
-    def test_extractor_uses_config_retry_settings(self) -> None:
+    def test_extractor_uses_config_retry_settings(self, mock_openai: MagicMock) -> None:
         """Extractor is configured with factory's retry settings."""
         config = ExtractionConfig(retry_attempts=5, initial_retry_delay=2.0)
         factory = ServiceFactory(config=config)
@@ -82,7 +85,7 @@ class TestServiceFactoryCreateExtractor:
         assert extractor.max_retries == 5
         assert extractor.initial_retry_delay == 2.0
 
-    def test_extractor_shares_client(self) -> None:
+    def test_extractor_shares_client(self, mock_openai: MagicMock) -> None:
         """Extractor uses factory's shared client."""
         config = ExtractionConfig()
         factory = ServiceFactory(config=config)
@@ -170,7 +173,8 @@ class TestServiceFactoryCreateImageService:
         assert image_service.config.min_area == 50000
         assert image_service.config.max_width == 800
 
-    def test_image_service_with_ai_verification(self) -> None:
+    @patch("mela_parser.services.factory.AsyncOpenAI")
+    def test_image_service_with_ai_verification(self, mock_openai: MagicMock) -> None:
         """ImageService gets client when AI verification enabled."""
         config = ExtractionConfig(use_ai_verification=True)
         factory = ServiceFactory(config=config)
