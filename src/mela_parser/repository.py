@@ -50,7 +50,7 @@ def slugify(text: str) -> str:
     return slug or "recipe"
 
 
-class RecipeDict(dict):
+class RecipeDict(dict[str, Any]):
     """Type alias for recipe dictionaries in Mela format."""
 
     pass

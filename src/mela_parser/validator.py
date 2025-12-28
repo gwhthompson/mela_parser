@@ -174,7 +174,7 @@ class RecipeValidator:
         has_yield = bool(recipe.recipeYield)
 
         # Calculate completeness score (weighted)
-        score_components = []
+        score_components: list[float] = []
 
         # Title (weight: 0.15)
         score_components.append(0.15 if has_title else 0.0)

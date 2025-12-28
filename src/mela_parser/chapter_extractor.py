@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 from openai.types.responses import EasyInputMessageParam
 
 from .config import ExtractionConfig
@@ -206,14 +206,16 @@ class AsyncChapterExtractor:
         )
 
         # Handle exceptions in results
-        final_results = []
+        final_results: list[ExtractionResult] = []
         for chapter, result in zip(chapters, results, strict=False):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error(f"Extraction failed for chapter '{chapter.name}': {result}")
                 final_results.append(
                     ExtractionResult(chapter_name=chapter.name, recipes=[], error=str(result))
                 )
             else:
+                # Type narrowing: result is ExtractionResult after BaseException check
+                assert isinstance(result, ExtractionResult)
                 final_results.append(result)
 
         # Log summary
@@ -291,15 +293,16 @@ class AsyncChapterExtractor:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect successful extractions
-        recipes = []
-        failed_titles = []
+        recipes: list[MelaRecipe] = []
+        failed_titles: list[str] = []
         for title, result in zip(titles, results, strict=False):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error(f"Chapter '{chapter.name}': Exception extracting '{title}': {result}")
                 failed_titles.append(title)
             elif result is None:
                 failed_titles.append(title)
             else:
+                # Type narrowing: result is MelaRecipe after BaseException/None check
                 recipes.append(result)
 
         # Log summary
@@ -347,7 +350,7 @@ class AsyncChapterExtractor:
                     chapter_name=chapter.name, recipes=recipes, retry_count=retry_count
                 )
 
-            except Exception as e:
+            except (OpenAIError, ValueError) as e:
                 retry_count += 1
                 last_error = str(e)
 
@@ -377,7 +380,7 @@ class AsyncChapterExtractor:
         Returns:
             List of all extracted MelaRecipe objects (may require multiple API calls)
         """
-        all_recipes = []
+        all_recipes: list[MelaRecipe] = []
         remaining_content = chapter.content
         page = 1
         max_pages = self.config.max_pagination_pages
@@ -610,7 +613,7 @@ class AsyncChapterExtractor:
                 return []
 
             # Verify each title exists in content
-            verified_titles = []
+            verified_titles: list[str] = []
             for title in raw_titles:
                 if self._verify_title_in_content(title, chapter.content):
                     verified_titles.append(title)
@@ -625,7 +628,7 @@ class AsyncChapterExtractor:
             )
             return verified_titles
 
-        except Exception as e:
+        except (OpenAIError, ValueError) as e:
             logger.error(f"Chapter '{chapter.name}': Title enumeration failed: {e}")
             return []
 
@@ -801,7 +804,7 @@ class AsyncChapterExtractor:
                 logger.debug(f"Chapter '{chapter.name}': Extracted '{title}'")
                 return recipe
 
-            except Exception as e:
+            except (OpenAIError, ValueError) as e:
                 if attempt < max_retries:
                     logger.debug(
                         f"Chapter '{chapter.name}': Retrying '{title}' "

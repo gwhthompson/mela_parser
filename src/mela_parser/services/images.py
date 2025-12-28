@@ -22,8 +22,9 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
+from openai import OpenAIError
 from PIL import Image, UnidentifiedImageError
 
 if TYPE_CHECKING:
@@ -184,14 +185,15 @@ class ImageService:
         for path in paths:
             # Normalize path (remove ../ prefix)
             normalized = path[3:] if path.startswith("../") else path
-            item = self.book.get_item_with_href(normalized)
+            # ebooklib has no type stubs, suppress partial type warnings
+            item: Any = self.book.get_item_with_href(normalized)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
 
             if not item:
                 logger.debug(f"Image not found in EPUB: {normalized}")
                 continue
 
             try:
-                content: bytes = item.get_content()
+                content: bytes = cast(bytes, item.get_content())  # pyright: ignore[reportUnknownMemberType]
                 with Image.open(BytesIO(content)) as img:
                     width, height = img.size
                     area = width * height
@@ -290,7 +292,7 @@ class ImageService:
             return (True, 0.5)
 
         # Build context for better matching
-        ingredients_list = []
+        ingredients_list: list[str] = []
         for group in recipe.ingredients:
             ingredients_list.extend(group.ingredients[:5])
         ingredients_preview = ", ".join(ingredients_list[:5])
@@ -356,8 +358,8 @@ Be specific about what you see in the image."""
             # Response parsing errors
             logger.error(f"Image verification response parsing failed: {e}")
             return (True, 0.5)
-        except Exception as e:
-            # OpenAI API errors or other unexpected failures
+        except OpenAIError as e:
+            # OpenAI API errors
             logger.error(f"Image verification API call failed: {e}")
             return (True, 0.5)
 

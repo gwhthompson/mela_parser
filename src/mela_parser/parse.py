@@ -14,7 +14,7 @@ The module supports:
 import logging
 from enum import Enum
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 from openai.types.responses import EasyInputMessageParam
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -257,7 +257,7 @@ class RecipeParser:
             if parsed_result is None:
                 raise ValueError("Recipe parsing returned None")
             return parsed_result
-        except Exception as e:
+        except (OpenAIError, ValueError) as e:
             logging.error(f"Error in RecipeParser.parse with {self.model}: {e}")
             raise
 
@@ -457,7 +457,7 @@ class RecipeMarkerInserter:
 
             return marked_text
 
-        except Exception as e:
+        except OpenAIError as e:
             logging.error(f"Error inserting markers with {self.model}: {e}")
             raise
 
@@ -562,12 +562,12 @@ class CookbookParser:
                             f"Output: {output_tokens}, "
                             f"Total: {total_tokens or (input_tokens + output_tokens)}"
                         )
-                except Exception as e:
+                except (AttributeError, KeyError, TypeError) as e:
                     logging.debug(f"Could not log token usage: {e}")
 
             return recipes
 
-        except Exception as e:
+        except (OpenAIError, ValueError) as e:
             logging.error(f"Error in CookbookParser.parse_cookbook: {e}")
             raise
 

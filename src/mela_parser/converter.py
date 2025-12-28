@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import ebooklib
 from ebooklib import epub
@@ -57,18 +57,19 @@ def convert_epub_by_chapters(epub_path: str | Path) -> tuple[epub.EpubBook, list
     """
     from .chapter_extractor import Chapter
 
-    book = epub.read_epub(str(epub_path), {"ignore_ncx": True})
+    # ebooklib has no type stubs, suppress partial type warnings
+    book = epub.read_epub(str(epub_path), {"ignore_ncx": True})  # pyright: ignore[reportUnknownMemberType]
     md = MarkItDown()
 
-    items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+    items: list[Any] = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
     chapters: list[Chapter] = []
 
     for i, item in enumerate(items):
-        html_content = item.get_content()
+        html_content: bytes = cast(bytes, item.get_content())
         result = md.convert_stream(BytesIO(html_content), file_extension=".html")
         markdown_content = result.text_content
 
-        chapter_name = item.get_name()
+        chapter_name: str = cast(str, item.get_name())
         chapters.append(Chapter(name=chapter_name, content=markdown_content, index=i))
 
     logger.info(f"Converted {len(chapters)} chapters to markdown")
@@ -98,7 +99,8 @@ class EpubConverter:
             Markdown content as a string
 
         Raises:
-            Exception: If conversion fails or file cannot be read
+            OSError: If file cannot be read
+            ValueError: If conversion fails
         """
         logging.info(f"Converting EPUB to Markdown: {epub_path}")
 
@@ -115,7 +117,7 @@ class EpubConverter:
 
             return markdown_content
 
-        except Exception as e:
+        except (OSError, ValueError, AttributeError) as e:
             logging.error(f"Error converting EPUB to Markdown: {e}")
             raise
 

@@ -21,6 +21,7 @@ Example:
 """
 
 import os
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -208,8 +209,8 @@ class ExtractionConfig:
                 max_pagination_pages=self.max_pagination_pages,
             )
 
-        # Ensure output_dir is a Path
-        if not isinstance(self.output_dir, Path):
+        # Ensure output_dir is a Path (may receive str from config/env)
+        if not isinstance(self.output_dir, Path):  # type: ignore[reportUnnecessaryIsInstance]
             self.output_dir = Path(self.output_dir)
 
     @classmethod
@@ -292,8 +293,6 @@ class ExtractionConfig:
             ConfigurationError: If TOML file is invalid
         """
         try:
-            import tomllib  # Python 3.11+
-
             with open(path, "rb") as f:
                 data = tomllib.load(f)
 
@@ -302,7 +301,7 @@ class ExtractionConfig:
                 return data["mela-parser"]
             return data
 
-        except Exception as e:
+        except (OSError, tomllib.TOMLDecodeError, KeyError) as e:
             raise ConfigurationError(
                 f"Failed to load configuration from {path}",
                 path=str(path),
@@ -322,7 +321,7 @@ class ExtractionConfig:
         Returns:
             Dictionary of configuration values from environment
         """
-        config = {}
+        config: dict[str, Any] = {}
         prefix = "MELA_PARSER_"
 
         for key, value in os.environ.items():
@@ -367,7 +366,7 @@ class ExtractionConfig:
             path.parent.mkdir(parents=True, exist_ok=True)
 
             # Convert to dict, handling Path objects
-            config_dict = {}
+            config_dict: dict[str, Any] = {}
             for key, value in self.__dict__.items():
                 if isinstance(value, Path):
                     config_dict[key] = str(value)
@@ -381,7 +380,7 @@ class ExtractionConfig:
             raise ConfigurationError(
                 "tomli_w package required to save configuration. Install with: pip install tomli-w"
             ) from None
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             raise ConfigurationError(
                 f"Failed to save configuration to {path}",
                 path=str(path),
@@ -400,7 +399,7 @@ class ExtractionConfig:
             >>> print(config_dict["model"])
             gpt-5-nano
         """
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in self.__dict__.items():
             if isinstance(value, Path):
                 result[key] = str(value)

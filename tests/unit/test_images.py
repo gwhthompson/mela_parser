@@ -6,6 +6,7 @@ Tests ImageConfig, ImageCandidate, SelectionStrategy, and ImageService.
 from unittest.mock import MagicMock
 
 import pytest
+from openai import OpenAIError
 
 from mela_parser.parse import IngredientGroup, MelaRecipe
 from mela_parser.services.images import (
@@ -774,7 +775,7 @@ class TestImageServiceAIVerification:
         mock_book = MagicMock()
 
         mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
+        mock_client.chat.completions.create = AsyncMock(side_effect=OpenAIError("API error"))
 
         service = ImageService(
             book=mock_book, config=ImageConfig(ai_threshold=0.6), client=mock_client

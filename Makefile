@@ -15,8 +15,8 @@ dev:  ## Install package with development dependencies
 test:  ## Run tests
 	uv run pytest -v
 
-test-cov:  ## Run tests with coverage report
-	uv run pytest -v --cov=src --cov-report=term-missing --cov-report=html
+test-cov:  ## Run tests with coverage report (enforces 70% minimum)
+	uv run pytest -v --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=70
 
 lint:  ## Run linter (ruff check)
 	uv run ruff check src tests

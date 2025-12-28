@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from openai import OpenAIError
 from pydantic import ValidationError
 
 from mela_parser.parse import CookbookTOC, TOCEntry
@@ -367,7 +368,7 @@ class TestExtractTOCAsync:
         self, extractor: TOCExtractor, mock_client: MagicMock
     ) -> None:
         """Returns empty TOC when parsing raises exception."""
-        mock_client.responses.parse.side_effect = Exception("API error")
+        mock_client.responses.parse.side_effect = OpenAIError("API error")
 
         chapters = [MockChapter(name="Contents", content="toc", index=0)]
         result = await extractor.extract_toc(chapters)  # type: ignore[arg-type]
@@ -430,7 +431,7 @@ class TestExtractIndexTitlesAsync:
         self, extractor: TOCExtractor, mock_client: MagicMock
     ) -> None:
         """Returns empty list when parsing raises exception."""
-        mock_client.responses.parse.side_effect = RuntimeError("Network error")
+        mock_client.responses.parse.side_effect = OpenAIError("Network error")
 
         chapters = [MockChapter(name="Index", content="index", index=0)]
         result = await extractor.extract_index_titles(chapters)  # type: ignore[arg-type]

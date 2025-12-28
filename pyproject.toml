@@ -90,15 +90,9 @@ select = [
     "RUF",   # Ruff-specific rules
 ]
 ignore = [
-    "D100",  # Missing docstring in public module (will add incrementally)
-    "D101",  # Missing docstring in public class (will add incrementally)
-    "D102",  # Missing docstring in public method (will add incrementally)
-    "D103",  # Missing docstring in public function (will add incrementally)
-    "D104",  # Missing docstring in public package
-    "D107",  # Missing docstring in __init__
-    "ANN101",  # Missing type annotation for self
-    "ANN102",  # Missing type annotation for cls
-    "ANN401",  # Dynamically typed expressions (Any) are disallowed
+    "D104",  # Missing docstring in public package (__init__.py)
+    "D107",  # Missing docstring in __init__ methods
+    "ANN401",  # Dynamically typed expressions (Any) - needed for third-party lib interop
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -122,12 +116,32 @@ exclude = [
     "dist",
     "build"
 ]
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
+pythonVersion = "3.13"
+# External libraries without type stubs (ebooklib, markitdown)
 reportMissingTypeStubs = false
+
+# Source code should be strictly typed, but tests use mocking extensively
+# which creates false positives. Configure per-path strictness:
+[[tool.basedpyright.executionEnvironments]]
+root = "src"
+reportUnknownMemberType = true
+reportUnknownArgumentType = true
+reportUnknownVariableType = true
+reportUnknownParameterType = true
+
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
 reportUnknownVariableType = false
-pythonVersion = "3.13"
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
+reportMissingParameterType = false
+reportPrivateUsage = false
+reportMissingTypeArgument = false
+reportUnusedFunction = false
+reportUnnecessaryComparison = false
 
 [tool.coverage.run]
 source = ["src"]
@@ -145,6 +159,7 @@ exclude_lines = [
 ]
 precision = 2
 show_missing = true
+fail_under = 70
 
 [tool.coverage.html]
 directory = "htmlcov"

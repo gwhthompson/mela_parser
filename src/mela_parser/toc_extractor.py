@@ -8,7 +8,7 @@ of cookbooks, which can be used to verify extraction completeness.
 import logging
 from typing import Final
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 from openai.types.responses import EasyInputMessageParam
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -144,7 +144,7 @@ class TOCExtractor:
             logger.info(f"Parsed TOC: {len(toc.chapters)} chapters, {total_recipes} recipe titles")
             return toc
 
-        except Exception as e:
+        except (OpenAIError, ValueError) as e:
             logger.error(f"TOC parsing failed: {e}")
             return CookbookTOC(chapters=[])
 
@@ -175,7 +175,7 @@ class TOCExtractor:
             logger.info(f"Parsed Index: {len(titles)} recipe titles")
             return titles
 
-        except Exception as e:
+        except (OpenAIError, ValueError) as e:
             logger.error(f"Index parsing failed: {e}")
             return []
 
