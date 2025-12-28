@@ -215,7 +215,7 @@ class AsyncChapterExtractor:
                 )
             else:
                 # Type narrowing: result is ExtractionResult after BaseException check
-                assert isinstance(result, ExtractionResult)
+                assert isinstance(result, ExtractionResult)  # nosec B101
                 final_results.append(result)
 
         # Log summary
