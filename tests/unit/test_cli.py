@@ -6,7 +6,7 @@ Tests CLI argument parsing, logging setup, and display functions.
 import logging
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -237,3 +237,213 @@ class TestDisplayOutputContent:
         """display_error shows error message."""
         display_error("File Error", "File not found")
         assert mock_console.print.called
+
+
+# ============================================================================
+# main_async Tests
+# ============================================================================
+
+
+class TestMainAsync:
+    """Tests for main_async function."""
+
+    @pytest.fixture
+    def mock_epub_book(self):
+        """Create a mock EpubBook with test metadata."""
+        book = MagicMock()
+        book.get_metadata.return_value = [("Test Cookbook",)]
+        return book
+
+    @pytest.fixture
+    def mock_context(self):
+        """Create a mock PipelineContext."""
+        from mela_parser.chapter_extractor import Chapter
+        from mela_parser.parse import IngredientGroup, MelaRecipe
+
+        ctx = MagicMock()
+        ctx.chapters = [Chapter(name="Test", content="Content", index=0)]
+        ctx.recipes = [
+            MelaRecipe(
+                title="Test Recipe",
+                ingredients=[IngredientGroup(title="", ingredients=["1 item"])],
+                instructions=["Step 1.", "Step 2."],
+            )
+        ]
+        ctx.unique_recipes = ctx.recipes
+        ctx.output_dir = Path("/tmp/test_output")
+        return ctx
+
+    @pytest.mark.asyncio
+    async def test_main_async_file_not_found(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """main_async shows error when file doesn't exist."""
+        from mela_parser.cli import main_async
+
+        # Set up args with non-existent file
+        monkeypatch.setattr(sys, "argv", ["mela-parse", str(tmp_path / "nonexistent.epub")])
+
+        with pytest.raises(SystemExit) as exc_info:
+            await main_async()
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_main_async_successful_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_epub_book, mock_context
+    ) -> None:
+        """main_async runs pipeline stages successfully."""
+        from mela_parser.cli import main_async
+
+        # Create a fake epub file
+        epub_file = tmp_path / "test.epub"
+        epub_file.write_bytes(b"fake epub content")
+
+        # Set up args
+        monkeypatch.setattr(
+            sys, "argv", ["mela-parse", str(epub_file), "--output-dir", str(tmp_path / "output")]
+        )
+
+        # Setup mock pipeline stage
+        mock_stage = MagicMock()
+        mock_stage.name = "Conversion"
+        mock_stage.execute = AsyncMock(return_value=None)
+
+        mock_context.output_dir = tmp_path / "output" / "test_cookbook"
+        (tmp_path / "output" / "test_cookbook").mkdir(parents=True)
+
+        # Mock all dependencies with combined context managers
+        with (
+            patch("ebooklib.epub.read_epub", return_value=mock_epub_book),
+            patch("mela_parser.cli.ServiceFactory"),
+            patch("mela_parser.cli.create_default_pipeline") as mock_pipeline,
+            patch("mela_parser.cli.PipelineContext", return_value=mock_context),
+            patch("shutil.make_archive", return_value=str(tmp_path / "test.zip")),
+            patch("os.rename"),
+        ):
+            mock_pipeline.return_value.stages = [mock_stage]
+            await main_async()
+
+    @pytest.mark.asyncio
+    async def test_main_async_with_no_images(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_epub_book, mock_context
+    ) -> None:
+        """main_async respects --no-images flag."""
+        from mela_parser.cli import main_async
+
+        # Create a fake epub file
+        epub_file = tmp_path / "test.epub"
+        epub_file.write_bytes(b"fake epub content")
+
+        # Set up args with --no-images
+        monkeypatch.setattr(sys, "argv", ["mela-parse", str(epub_file), "--no-images"])
+
+        # Setup mock pipeline stage
+        mock_stage = MagicMock()
+        mock_stage.name = "Conversion"
+        mock_stage.execute = AsyncMock(return_value=None)
+
+        mock_context.output_dir = tmp_path / "output" / "test_cookbook"
+        (tmp_path / "output" / "test_cookbook").mkdir(parents=True)
+
+        # Mock all dependencies with combined context managers
+        with (
+            patch("ebooklib.epub.read_epub", return_value=mock_epub_book),
+            patch("mela_parser.cli.ServiceFactory") as mock_factory,
+            patch("mela_parser.cli.create_default_pipeline") as mock_pipeline,
+            patch("mela_parser.cli.PipelineContext", return_value=mock_context),
+            patch("shutil.make_archive", return_value=str(tmp_path / "test.zip")),
+            patch("os.rename"),
+        ):
+            mock_pipeline.return_value.stages = [mock_stage]
+            await main_async()
+
+            # Verify config has extract_images=False
+            call_kwargs = mock_factory.call_args
+            assert call_kwargs is not None
+            config = call_kwargs.kwargs.get("config")
+            assert config is not None
+            assert config.extract_images is False
+
+
+# ============================================================================
+# main Tests
+# ============================================================================
+
+
+class TestMain:
+    """Tests for main function (sync entry point)."""
+
+    def test_main_runs_asyncio(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """main runs asyncio.run with main_async."""
+        import contextlib
+
+        from mela_parser.cli import main
+
+        epub_file = tmp_path / "test.epub"
+        epub_file.write_bytes(b"fake epub content")
+
+        monkeypatch.setattr(sys, "argv", ["mela-parse", str(epub_file)])
+
+        def mock_asyncio_run(coro):
+            """Mock that properly closes the coroutine to avoid warning."""
+            coro.close()
+            return None
+
+        with (
+            patch("asyncio.run", side_effect=mock_asyncio_run) as mock_run,
+            contextlib.suppress(SystemExit),
+        ):
+            main()
+
+        # asyncio.run should have been called
+        mock_run.assert_called()
+
+    def test_main_handles_keyboard_interrupt(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """main handles KeyboardInterrupt gracefully."""
+        from mela_parser.cli import main
+
+        epub_file = tmp_path / "test.epub"
+        epub_file.write_bytes(b"fake epub content")
+
+        monkeypatch.setattr(sys, "argv", ["mela-parse", str(epub_file)])
+
+        def mock_asyncio_run_interrupt(coro):
+            """Mock that closes coroutine then raises KeyboardInterrupt."""
+            coro.close()
+            raise KeyboardInterrupt
+
+        with (
+            patch("asyncio.run", side_effect=mock_asyncio_run_interrupt),
+            patch("mela_parser.cli.console.print") as mock_print,
+        ):
+            # Should not raise, should print message
+            main()
+
+            # Verify interrupt message was printed
+            assert mock_print.called
+
+    def test_main_handles_generic_exception(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """main handles unexpected exceptions."""
+        from mela_parser.cli import main
+
+        epub_file = tmp_path / "test.epub"
+        epub_file.write_bytes(b"fake epub content")
+
+        monkeypatch.setattr(sys, "argv", ["mela-parse", str(epub_file)])
+
+        def mock_asyncio_run_error(coro):
+            """Mock that closes coroutine then raises RuntimeError."""
+            coro.close()
+            raise RuntimeError("Unexpected error")
+
+        with (
+            patch("asyncio.run", side_effect=mock_asyncio_run_error),
+            patch("mela_parser.cli.console.print"),
+            pytest.raises(RuntimeError, match="Unexpected error"),
+        ):
+            main()

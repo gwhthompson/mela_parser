@@ -350,3 +350,340 @@ class TestRecipeModelSerialization:
 
         assert "JSON Test" in json_str
         assert '"title"' in json_str
+
+
+# ============================================================================
+# RecipeParser Tests
+# ============================================================================
+
+
+class TestRecipeParser:
+    """Tests for RecipeParser class."""
+
+    @pytest.fixture
+    def sample_recipe(self):
+        """Create a sample MelaRecipe for mock responses."""
+        return MelaRecipe(
+            title="Chocolate Cake",
+            ingredients=[IngredientGroup(title="", ingredients=["200g flour", "100g sugar"])],
+            instructions=["Mix ingredients.", "Bake at 350F."],
+        )
+
+    def test_parser_init(self) -> None:
+        """RecipeParser initializes with recipe text and model."""
+        from unittest.mock import patch
+
+        from mela_parser.parse import RecipeParser
+
+        with patch("mela_parser.parse.OpenAI"):
+            parser = RecipeParser("Test recipe text", model="gpt-5-mini")
+            assert parser.recipe_text == "Test recipe text"
+            assert parser.model == "gpt-5-mini"
+
+    def test_parser_parse_success(self, sample_recipe) -> None:
+        """RecipeParser.parse returns recipe on success."""
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import RecipeParser
+
+        mock_response = MagicMock()
+        mock_response.output_parsed = sample_recipe
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            parser = RecipeParser("Test recipe text")
+            result = parser.parse()
+
+            assert result.title == "Chocolate Cake"
+            mock_client.responses.parse.assert_called_once()
+
+    def test_parser_parse_none_response(self) -> None:
+        """RecipeParser.parse raises on None response."""
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import RecipeParser
+
+        mock_response = MagicMock()
+        mock_response.output_parsed = None
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            parser = RecipeParser("Test recipe text")
+            with pytest.raises(ValueError, match="returned None"):
+                parser.parse()
+
+    def test_parser_parse_openai_error(self) -> None:
+        """RecipeParser.parse raises on OpenAI error."""
+        from unittest.mock import MagicMock, patch
+
+        from openai import OpenAIError
+
+        from mela_parser.parse import RecipeParser
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.side_effect = OpenAIError("API Error")
+            mock_openai.return_value = mock_client
+
+            parser = RecipeParser("Test recipe text")
+            with pytest.raises(OpenAIError):
+                parser.parse()
+
+
+# ============================================================================
+# RecipeMarkerInserter Tests
+# ============================================================================
+
+
+class TestRecipeMarkerInserter:
+    """Tests for RecipeMarkerInserter class."""
+
+    def test_inserter_init(self) -> None:
+        """RecipeMarkerInserter initializes with model and marker."""
+        from unittest.mock import patch
+
+        from mela_parser.parse import RecipeMarkerInserter
+
+        with patch("mela_parser.parse.OpenAI"):
+            inserter = RecipeMarkerInserter(model="gpt-5-mini")
+            assert inserter.model == "gpt-5-mini"
+            assert inserter.marker == "===RECIPE_START==="
+
+    def test_insert_markers_success(self) -> None:
+        """insert_markers returns marked text on success."""
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import RecipeMarkerInserter
+
+        markdown = "# Cookbook\n\n# Chocolate Cake\nIngredients..."
+        marked_text = "# Cookbook\n\n===RECIPE_START===\n# Chocolate Cake\nIngredients..."
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = marked_text
+        mock_response.usage = MagicMock(prompt_tokens=100, completion_tokens=110, total_tokens=210)
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            inserter = RecipeMarkerInserter()
+            result = inserter.insert_markers(markdown, book_title="Test Cookbook")
+
+            assert "===RECIPE_START===" in result
+            mock_client.chat.completions.create.assert_called_once()
+
+    def test_insert_markers_empty_response(self) -> None:
+        """insert_markers raises on empty response."""
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import RecipeMarkerInserter
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = None
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            inserter = RecipeMarkerInserter()
+            with pytest.raises(ValueError, match="empty response"):
+                inserter.insert_markers("Test markdown")
+
+    def test_insert_markers_openai_error(self) -> None:
+        """insert_markers raises on OpenAI error."""
+        from unittest.mock import MagicMock, patch
+
+        from openai import OpenAIError
+
+        from mela_parser.parse import RecipeMarkerInserter
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.side_effect = OpenAIError("API Error")
+            mock_openai.return_value = mock_client
+
+            inserter = RecipeMarkerInserter()
+            with pytest.raises(OpenAIError):
+                inserter.insert_markers("Test markdown")
+
+    def test_split_by_markers(self) -> None:
+        """split_by_markers returns list of recipe sections."""
+        from unittest.mock import patch
+
+        from mela_parser.parse import RecipeMarkerInserter
+
+        marked_text = (
+            "Introduction text here\n"
+            "===RECIPE_START===\n"
+            "# Recipe One\nIngredients...\n"
+            "===RECIPE_START===\n"
+            "# Recipe Two\nMore ingredients..."
+        )
+
+        with patch("mela_parser.parse.OpenAI"):
+            inserter = RecipeMarkerInserter()
+            sections = inserter.split_by_markers(marked_text)
+
+            assert len(sections) == 2
+            assert "# Recipe One" in sections[0]
+            assert "# Recipe Two" in sections[1]
+
+    def test_split_by_markers_empty_sections_filtered(self) -> None:
+        """split_by_markers filters out empty sections."""
+        from unittest.mock import patch
+
+        from mela_parser.parse import RecipeMarkerInserter
+
+        marked_text = (
+            "Intro\n"
+            "===RECIPE_START===\n"
+            "   \n"  # Empty/whitespace section
+            "===RECIPE_START===\n"
+            "# Real Recipe\nContent"
+        )
+
+        with patch("mela_parser.parse.OpenAI"):
+            inserter = RecipeMarkerInserter()
+            sections = inserter.split_by_markers(marked_text)
+
+            assert len(sections) == 1
+            assert "# Real Recipe" in sections[0]
+
+
+# ============================================================================
+# CookbookParser Tests
+# ============================================================================
+
+
+class TestCookbookParser:
+    """Tests for CookbookParser class."""
+
+    @pytest.fixture
+    def sample_recipe(self):
+        """Create a sample MelaRecipe for mock responses."""
+        return MelaRecipe(
+            title="Test Recipe",
+            ingredients=[IngredientGroup(title="", ingredients=["1 cup flour"])],
+            instructions=["Step 1.", "Step 2."],
+        )
+
+    def test_parser_init(self, caplog) -> None:
+        """CookbookParser initializes with model and logs."""
+        import logging
+        from unittest.mock import patch
+
+        from mela_parser.parse import CookbookParser
+
+        with patch("mela_parser.parse.OpenAI"):
+            with caplog.at_level(logging.INFO):
+                parser = CookbookParser(model="gpt-5-mini")
+
+            assert parser.model == "gpt-5-mini"
+            assert "gpt-5-mini" in caplog.text
+
+    def test_parse_cookbook_success(self, sample_recipe) -> None:
+        """parse_cookbook returns CookbookRecipes on success."""
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import CookbookParser, CookbookRecipes
+
+        mock_response = MagicMock()
+        mock_response.output_parsed = CookbookRecipes(
+            recipes=[sample_recipe],
+            has_more=False,
+        )
+        mock_response.usage = MagicMock(input_tokens=100, output_tokens=50, total_tokens=150)
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            parser = CookbookParser()
+            result = parser.parse_cookbook("Cookbook content", book_title="Test Book")
+
+            assert len(result.recipes) == 1
+            assert result.recipes[0].title == "Test Recipe"
+            assert result.has_more is False
+
+    def test_parse_cookbook_none_response(self) -> None:
+        """parse_cookbook raises on None response."""
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import CookbookParser
+
+        mock_response = MagicMock()
+        mock_response.output_parsed = None
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            parser = CookbookParser()
+            with pytest.raises(ValueError, match="returned None"):
+                parser.parse_cookbook("Cookbook content")
+
+    def test_parse_cookbook_empty_recipes_warning(self, caplog) -> None:
+        """parse_cookbook logs warning when no recipes extracted."""
+        import logging
+        from unittest.mock import MagicMock, patch
+
+        from mela_parser.parse import CookbookParser, CookbookRecipes
+
+        mock_response = MagicMock()
+        mock_response.output_parsed = CookbookRecipes(recipes=[], has_more=False)
+        mock_response.usage = None
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            parser = CookbookParser()
+            with caplog.at_level(logging.WARNING):
+                result = parser.parse_cookbook("Cookbook content")
+
+            assert len(result.recipes) == 0
+            assert "No recipes extracted" in caplog.text
+
+    def test_parse_cookbook_openai_error(self) -> None:
+        """parse_cookbook raises on OpenAI error."""
+        from unittest.mock import MagicMock, patch
+
+        from openai import OpenAIError
+
+        from mela_parser.parse import CookbookParser
+
+        with patch("mela_parser.parse.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.responses.parse.side_effect = OpenAIError("API Error")
+            mock_openai.return_value = mock_client
+
+            parser = CookbookParser()
+            with pytest.raises(OpenAIError):
+                parser.parse_cookbook("Cookbook content")
+
+    def test_build_extraction_prompt(self) -> None:
+        """_build_extraction_prompt builds correct prompt format."""
+        from unittest.mock import patch
+
+        from mela_parser.parse import CookbookParser
+
+        with patch("mela_parser.parse.OpenAI"):
+            parser = CookbookParser()
+            prompt = parser._build_extraction_prompt("Test content", "My Cookbook")
+
+            assert "My Cookbook" in prompt
+            assert "Test content" in prompt
+            assert "Extract EVERY COMPLETE recipe" in prompt

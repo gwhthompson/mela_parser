@@ -23,6 +23,7 @@ import shutil
 import time
 import warnings
 from pathlib import Path
+from typing import Any, cast
 
 from rich.console import Console
 from rich.panel import Panel
@@ -211,10 +212,15 @@ async def main_async() -> None:
     )
 
     # Get book title for display (before pipeline runs)
+    # ebooklib has no type stubs, suppress partial type warnings
     from ebooklib import epub as epub_lib
 
-    book_temp = epub_lib.read_epub(str(epub_path), {"ignore_ncx": True})
-    book_title = book_temp.get_metadata("DC", "title")[0][0]
+    book_temp = epub_lib.read_epub(str(epub_path), {"ignore_ncx": True})  # pyright: ignore[reportUnknownMemberType]
+    metadata: list[tuple[Any, ...]] = cast(
+        list[tuple[Any, ...]],
+        book_temp.get_metadata("DC", "title"),  # pyright: ignore[reportUnknownMemberType]
+    )
+    book_title: str = str(metadata[0][0])
     book_slug = slugify(book_title)
 
     # Update output_dir to include book slug (so persistence writes to output/{book}/)
@@ -307,7 +313,7 @@ def main() -> None:
             )
         )
         console.print()
-    except Exception as e:
+    except Exception as e:  # Intentional catch-all for CLI entry point
         console.print()
         console.print(
             Panel(

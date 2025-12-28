@@ -216,3 +216,86 @@ def sample_mela_recipe():
         instructions=["Preheat oven to 400F.", "Season chicken.", "Roast for 1 hour."],
         notes="Let rest before carving.",
     )
+
+
+# ============================================================================
+# OpenAI Client Mocking Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def mock_async_openai_client():
+    """Create a mock AsyncOpenAI client for extraction tests.
+
+    Returns an AsyncMock that can be configured in individual tests
+    to return specific responses.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    client = MagicMock()
+    client.responses = MagicMock()
+    client.responses.parse = AsyncMock()
+    return client
+
+
+@pytest.fixture
+def mock_sync_openai_client():
+    """Create a mock synchronous OpenAI client for parser tests.
+
+    Returns a MagicMock that can be configured in individual tests
+    to return specific responses.
+    """
+    from unittest.mock import MagicMock
+
+    client = MagicMock()
+    client.responses = MagicMock()
+    client.responses.parse = MagicMock()
+    client.chat = MagicMock()
+    client.chat.completions = MagicMock()
+    client.chat.completions.create = MagicMock()
+    return client
+
+
+@pytest.fixture
+def mock_chapter_titles_response(sample_mela_recipe):
+    """Create a mock response for title enumeration (ChapterTitles)."""
+    from unittest.mock import MagicMock
+
+    from mela_parser.parse import ChapterTitles
+
+    response = MagicMock()
+    response.output_parsed = ChapterTitles(
+        titles=["Roasted Chicken", "Grilled Salmon"],
+        chapter_type="recipes",
+    )
+    return response
+
+
+@pytest.fixture
+def mock_cookbook_recipes_response(sample_mela_recipe):
+    """Create a mock response for cookbook extraction (CookbookRecipes)."""
+    from unittest.mock import MagicMock
+
+    from mela_parser.parse import CookbookRecipes
+
+    response = MagicMock()
+    response.output_parsed = CookbookRecipes(
+        recipes=[sample_mela_recipe],
+        has_more=False,
+        last_content_marker=None,
+    )
+    response.usage = MagicMock()
+    response.usage.input_tokens = 100
+    response.usage.output_tokens = 50
+    response.usage.total_tokens = 150
+    return response
+
+
+@pytest.fixture
+def mock_recipe_response(sample_mela_recipe):
+    """Create a mock response for single recipe extraction (MelaRecipe)."""
+    from unittest.mock import MagicMock
+
+    response = MagicMock()
+    response.output_parsed = sample_mela_recipe
+    return response
