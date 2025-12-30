@@ -16,6 +16,8 @@ cookbooks.
 from __future__ import annotations
 
 import logging
+import re
+from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -28,6 +30,155 @@ if TYPE_CHECKING:
     from .chapter_extractor import Chapter
 
 logger = logging.getLogger(__name__)
+
+
+class ChapterType(Enum):
+    """Classification of EPUB chapters by content type."""
+
+    IMAGE_ONLY = "image_only"  # Has LARGE image, <150 chars text
+    TEXT_ONLY = "text_only"  # No large image, >150 chars text
+    BOTH = "both"  # Has LARGE image AND >150 chars text
+    MINIMAL = "minimal"  # <150 chars, no large image
+
+
+# Icon patterns to filter out (dietary indicators, navigation, ratings)
+ICON_PATTERNS = {"gf", "df", "ve", "vg", "logo", "brand", "star", "arrow", "num", "pub"}
+
+# Minimum text length to consider a chapter as having meaningful content
+MIN_TEXT_LENGTH = 150
+
+
+def is_recipe_image(image_path: str) -> bool:
+    """Check if image is likely a recipe photo (not an icon).
+
+    Filters out common icon patterns like dietary indicators (gf, df, ve),
+    chapter numbers, and navigation elements.
+
+    Args:
+        image_path: Path to the image file
+
+    Returns:
+        True if likely a recipe photo, False if likely an icon
+    """
+    filename = image_path.split("/")[-1].lower()
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    # Skip known icon patterns
+    for pattern in ICON_PATTERNS:
+        if pattern in base:
+            return False
+
+    # Skip tiny images by name pattern (c1-c9, 1by8, etc.)
+    return not re.match(r"^[a-z]?\d{1,2}$", base)
+
+
+def classify_chapter(content: str) -> ChapterType:
+    """Classify chapter by recipe image presence and text content.
+
+    Args:
+        content: Markdown content of the chapter
+
+    Returns:
+        ChapterType indicating the chapter's classification
+    """
+    # Find all images in markdown format
+    images = re.findall(r"!\[.*?\]\(([^)]+)\)", content)
+
+    # Filter to recipe images only (exclude icons)
+    recipe_images = [img for img in images if is_recipe_image(img)]
+    has_recipe_image = len(recipe_images) > 0
+
+    # Get text length excluding image markup
+    text_only = re.sub(r"!\[.*?\]\(.*?\)", "", content).strip()
+    text_len = len(text_only)
+
+    if has_recipe_image and text_len > MIN_TEXT_LENGTH:
+        return ChapterType.BOTH
+    elif has_recipe_image:
+        return ChapterType.IMAGE_ONLY
+    elif text_len > MIN_TEXT_LENGTH:
+        return ChapterType.TEXT_ONLY
+    return ChapterType.MINIMAL
+
+
+def merge_image_chapters(chapters: list[Chapter]) -> list[Chapter]:
+    """Merge image-only chapters with adjacent text chapters.
+
+    Many cookbook EPUBs have images and recipe text in separate chapters.
+    This function merges them so the LLM can see both together.
+
+    Strategy:
+    1. Classify each chapter: IMAGE_ONLY, TEXT_ONLY, BOTH, MINIMAL
+    2. For each IMAGE_ONLY chapter:
+       - If NEXT is TEXT_ONLY: prepend image to next chapter (I→T pattern)
+       - Elif PREV is TEXT_ONLY: append image to prev chapter (T→I pattern)
+       - Elif NEXT is IMAGE_ONLY: collect consecutive images, merge with first TEXT
+    3. Return consolidated chapters
+
+    Args:
+        chapters: List of Chapter objects from EPUB conversion
+
+    Returns:
+        List of chapters with image-only chapters merged into adjacent text
+    """
+    from .chapter_extractor import Chapter
+
+    if not chapters:
+        return chapters
+
+    # Classify all chapters
+    types = [classify_chapter(ch.content) for ch in chapters]
+
+    # Track which chapters have been merged
+    merged: list[Chapter] = []
+    used: set[int] = set()
+
+    for i, (ch, typ) in enumerate(zip(chapters, types, strict=True)):
+        if i in used:
+            continue
+
+        if typ == ChapterType.IMAGE_ONLY:
+            # Collect consecutive IMAGE_ONLY chapters
+            images_content = [ch.content]
+            j = i + 1
+            while j < len(chapters) and types[j] == ChapterType.IMAGE_ONLY:
+                images_content.append(chapters[j].content)
+                used.add(j)
+                j += 1
+
+            # Find target TEXT_ONLY chapter to merge into
+            if j < len(chapters) and types[j] == ChapterType.TEXT_ONLY:
+                # I→T pattern: Prepend images to next text chapter
+                merged_content = "\n\n".join(images_content) + "\n\n" + chapters[j].content
+                merged.append(
+                    Chapter(
+                        name=chapters[j].name,
+                        content=merged_content,
+                        index=chapters[j].index,
+                    )
+                )
+                used.add(j)
+            elif merged and i > 0 and types[i - 1] == ChapterType.TEXT_ONLY:
+                # T→I pattern: Append images to previous text chapter
+                prev = merged[-1]
+                merged[-1] = Chapter(
+                    name=prev.name,
+                    content=prev.content + "\n\n" + "\n\n".join(images_content),
+                    index=prev.index,
+                )
+            else:
+                # No suitable merge target, keep as-is
+                merged.append(ch)
+            used.add(i)
+        else:
+            merged.append(ch)
+            used.add(i)
+
+    merge_count = len(chapters) - len(merged)
+    if merge_count > 0:
+        logger.info(f"Merged {merge_count} image-only chapters into adjacent text chapters")
+
+    return merged
 
 
 def convert_epub_by_chapters(epub_path: str | Path) -> tuple[epub.EpubBook, list[Chapter]]:
@@ -71,6 +222,10 @@ def convert_epub_by_chapters(epub_path: str | Path) -> tuple[epub.EpubBook, list
 
         chapter_name: str = cast(str, item.get_name())
         chapters.append(Chapter(name=chapter_name, content=markdown_content, index=i))
+
+    # Merge image-only chapters with adjacent text chapters
+    # This ensures the LLM sees images alongside recipe text
+    chapters = merge_image_chapters(chapters)
 
     logger.info(f"Converted {len(chapters)} chapters to markdown")
     return book, chapters

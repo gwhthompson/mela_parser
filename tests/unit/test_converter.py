@@ -7,7 +7,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mela_parser.converter import EpubConverter, convert_epub_by_chapters
+from mela_parser.chapter_extractor import Chapter
+from mela_parser.converter import (
+    ChapterType,
+    EpubConverter,
+    classify_chapter,
+    convert_epub_by_chapters,
+    is_recipe_image,
+    merge_image_chapters,
+)
 
 
 class TestEpubConverterInit:
@@ -323,3 +331,204 @@ class TestEpubConverterConvert:
 
         with pytest.raises(ValueError, match="Conversion failed"):
             converter.convert_epub_to_markdown("test.epub")
+
+
+class TestIsRecipeImage:
+    """Tests for is_recipe_image function."""
+
+    def test_normal_image_is_recipe(self) -> None:
+        """Normal recipe images pass the filter."""
+        assert is_recipe_image("../images/pasta.jpg") is True
+        assert is_recipe_image("photos/chicken_curry.png") is True
+        assert is_recipe_image("pg_65.jpg") is True
+
+    def test_dietary_icons_filtered(self) -> None:
+        """Dietary indicator icons are filtered out."""
+        assert is_recipe_image("gf.jpg") is False
+        assert is_recipe_image("df.png") is False
+        assert is_recipe_image("ve.gif") is False
+        assert is_recipe_image("vg.jpg") is False
+
+    def test_navigation_icons_filtered(self) -> None:
+        """Navigation and branding icons are filtered out."""
+        assert is_recipe_image("logo.png") is False
+        assert is_recipe_image("brand_icon.jpg") is False
+        assert is_recipe_image("arrow_right.png") is False
+
+    def test_chapter_numbers_filtered(self) -> None:
+        """Chapter number images are filtered out (c1-c9 pattern)."""
+        assert is_recipe_image("c1.jpg") is False
+        assert is_recipe_image("c9.png") is False
+
+    def test_short_numbered_images_filtered(self) -> None:
+        """Short numbered images are filtered (1-99 pattern)."""
+        assert is_recipe_image("1.jpg") is False
+        assert is_recipe_image("12.png") is False
+        assert is_recipe_image("99.gif") is False
+
+    def test_page_numbers_pass(self) -> None:
+        """Page-numbered images (pg_65) pass - they're often recipe photos."""
+        assert is_recipe_image("pg_65.jpg") is True
+        assert is_recipe_image("page123.png") is True
+
+    def test_mixed_case_icon_patterns(self) -> None:
+        """Icon patterns work case-insensitively."""
+        # The function lowercases the filename
+        assert is_recipe_image("GF.jpg") is False
+        assert is_recipe_image("LOGO.PNG") is False
+
+
+class TestClassifyChapter:
+    """Tests for classify_chapter function."""
+
+    def test_image_only_chapter(self) -> None:
+        """Chapter with image and <150 chars is IMAGE_ONLY."""
+        content = "![recipe](../images/pasta.jpg)\n\nShort text"
+        assert classify_chapter(content) == ChapterType.IMAGE_ONLY
+
+    def test_text_only_chapter(self) -> None:
+        """Chapter with no images and >150 chars is TEXT_ONLY."""
+        content = "x" * 200  # 200 chars of text
+        assert classify_chapter(content) == ChapterType.TEXT_ONLY
+
+    def test_both_chapter(self) -> None:
+        """Chapter with image and >150 chars is BOTH."""
+        content = "![recipe](../images/pasta.jpg)\n\n" + "x" * 200
+        assert classify_chapter(content) == ChapterType.BOTH
+
+    def test_minimal_chapter(self) -> None:
+        """Chapter with no images and <150 chars is MINIMAL."""
+        content = "Short text"
+        assert classify_chapter(content) == ChapterType.MINIMAL
+
+    def test_icon_images_ignored(self) -> None:
+        """Icon images don't count as recipe images."""
+        # Has icon image but no recipe image
+        content = "![icon](gf.jpg)\n\n" + "x" * 50
+        assert classify_chapter(content) == ChapterType.MINIMAL
+
+    def test_mixed_images(self) -> None:
+        """Recipe images are detected even with icons present."""
+        content = "![icon](gf.jpg)\n![recipe](../images/pasta.jpg)\n\n" + "x" * 200
+        assert classify_chapter(content) == ChapterType.BOTH
+
+    def test_text_length_excludes_image_markup(self) -> None:
+        """Text length calculation excludes image markdown."""
+        # Image markup is long but text is short
+        # Note: avoid "very" which contains "ve" (dietary pattern)
+        content = "![long alt text here](../images/long_filename.jpg)\n\nShort"
+        assert classify_chapter(content) == ChapterType.IMAGE_ONLY
+
+
+class TestMergeImageChapters:
+    """Tests for merge_image_chapters function."""
+
+    def test_empty_list(self) -> None:
+        """Empty list returns empty list."""
+        assert merge_image_chapters([]) == []
+
+    def test_no_image_only_chapters(self) -> None:
+        """Chapters without IMAGE_ONLY type are unchanged."""
+        chapters = [
+            Chapter(name="ch1.xhtml", content="x" * 200, index=0),
+            Chapter(name="ch2.xhtml", content="x" * 200, index=1),
+        ]
+        result = merge_image_chapters(chapters)
+        assert len(result) == 2
+        assert [c.name for c in result] == ["ch1.xhtml", "ch2.xhtml"]
+
+    def test_image_then_text_pattern(self) -> None:
+        """I→T pattern: Image prepended to following text chapter."""
+        image_chapter = Chapter(
+            name="image.xhtml",
+            content="![recipe](../images/pasta.jpg)",
+            index=0,
+        )
+        text_chapter = Chapter(
+            name="recipe.xhtml",
+            content="Recipe Title\n" + "x" * 200,
+            index=1,
+        )
+        result = merge_image_chapters([image_chapter, text_chapter])
+
+        assert len(result) == 1
+        assert result[0].name == "recipe.xhtml"
+        assert "![recipe](../images/pasta.jpg)" in result[0].content
+        assert "Recipe Title" in result[0].content
+
+    def test_text_then_image_pattern(self) -> None:
+        """T→I pattern: Image appended to preceding text chapter."""
+        text_chapter = Chapter(
+            name="recipe.xhtml",
+            content="Recipe Title\n" + "x" * 200,
+            index=0,
+        )
+        image_chapter = Chapter(
+            name="image.xhtml",
+            content="![recipe](../images/pasta.jpg)",
+            index=1,
+        )
+        result = merge_image_chapters([text_chapter, image_chapter])
+
+        assert len(result) == 1
+        assert result[0].name == "recipe.xhtml"
+        assert "![recipe](../images/pasta.jpg)" in result[0].content
+
+    def test_consecutive_images_merged(self) -> None:
+        """I→I→T pattern: Consecutive images merged into next text."""
+        img1 = Chapter(name="img1.xhtml", content="![a](a.jpg)", index=0)
+        img2 = Chapter(name="img2.xhtml", content="![b](b.jpg)", index=1)
+        text = Chapter(name="recipe.xhtml", content="x" * 200, index=2)
+
+        result = merge_image_chapters([img1, img2, text])
+
+        assert len(result) == 1
+        assert "![a](a.jpg)" in result[0].content
+        assert "![b](b.jpg)" in result[0].content
+
+    def test_both_chapters_unchanged(self) -> None:
+        """BOTH chapters (image + text) are not merged."""
+        both_chapter = Chapter(
+            name="complete.xhtml",
+            content="![recipe](image.jpg)\n" + "x" * 200,
+            index=0,
+        )
+        result = merge_image_chapters([both_chapter])
+
+        assert len(result) == 1
+        assert result[0].name == "complete.xhtml"
+
+    def test_image_without_merge_target(self) -> None:
+        """IMAGE_ONLY without adjacent TEXT_ONLY kept as-is."""
+        # Image between two BOTH chapters - no merge target
+        both1 = Chapter(name="b1.xhtml", content="![a](a.jpg)\n" + "x" * 200, index=0)
+        image = Chapter(name="img.xhtml", content="![b](b.jpg)", index=1)
+        both2 = Chapter(name="b2.xhtml", content="![c](c.jpg)\n" + "x" * 200, index=2)
+
+        result = merge_image_chapters([both1, image, both2])
+
+        assert len(result) == 3
+
+    def test_preserves_chapter_index(self) -> None:
+        """Merged chapter keeps target chapter's index."""
+        image = Chapter(name="img.xhtml", content="![a](a.jpg)", index=5)
+        text = Chapter(name="recipe.xhtml", content="x" * 200, index=6)
+
+        result = merge_image_chapters([image, text])
+
+        assert result[0].index == 6
+
+    def test_alternating_pattern(self) -> None:
+        """Handles I→T→I→T pattern (alternating image/text)."""
+        chapters = [
+            Chapter(name="img1.xhtml", content="![a](a.jpg)", index=0),
+            Chapter(name="txt1.xhtml", content="x" * 200, index=1),
+            Chapter(name="img2.xhtml", content="![b](b.jpg)", index=2),
+            Chapter(name="txt2.xhtml", content="y" * 200, index=3),
+        ]
+        result = merge_image_chapters(chapters)
+
+        # Each image merges with its following text
+        assert len(result) == 2
+        assert "![a](a.jpg)" in result[0].content
+        assert "![b](b.jpg)" in result[1].content
