@@ -41,7 +41,7 @@ class TestImageConfig:
     def test_default_values(self) -> None:
         """ImageConfig has sensible defaults."""
         config = ImageConfig()
-        assert config.min_area == 300_000  # ~550x550
+        assert config.min_area == 100_000  # ~550x550
         assert config.max_width == 600
         assert config.quality == 85
         assert config.strategy == SelectionStrategy.LARGEST
@@ -68,7 +68,7 @@ class TestImageConfig:
         # Overridden value
         assert config.max_width == 1024
         # Default values preserved
-        assert config.min_area == 300_000
+        assert config.min_area == 100_000
         assert config.quality == 85
 
 
@@ -329,7 +329,7 @@ class TestImageServiceLoadCandidates:
         mock_book.get_item_with_href.return_value = mock_item
 
         # min_area=300000, image area=10000
-        config = ImageConfig(min_area=300_000)
+        config = ImageConfig(min_area=100_000)
         service = ImageService(book=mock_book, config=config)
 
         candidates = service._load_candidates(["images/small.jpg"])

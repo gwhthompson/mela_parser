@@ -266,6 +266,29 @@ class TestFileRecipeRepository:
 
         assert data["categories"] == ["Baking"]
 
+    def test_save_uses_mela_field_names(
+        self, repository: FileRecipeRepository, sample_recipe: MelaRecipe, tmp_path: Path
+    ) -> None:
+        """Saved file uses Mela-compatible field names."""
+        filepath = repository.save(sample_recipe, tmp_path)
+        assert filepath is not None
+
+        with filepath.open() as f:
+            data = json.load(f)
+
+        # Mela uses 'yield' not 'recipeYield'
+        assert "yield" in data
+        assert data["yield"] == "Serves 4"
+        assert "recipeYield" not in data
+
+        # Required 'text' field
+        assert "text" in data
+        assert data["text"] == "A delicious test recipe."
+
+        # Optional 'notes' field
+        assert "notes" in data
+        assert data["notes"] == "Best served fresh."
+
     def test_deduplicate_removes_duplicates(self, repository: FileRecipeRepository) -> None:
         """deduplicate() removes recipes with duplicate titles."""
         recipes = [

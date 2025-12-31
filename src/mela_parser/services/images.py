@@ -55,7 +55,7 @@ class ImageConfig:
         ai_threshold: Confidence threshold for AI verification (0-1)
     """
 
-    min_area: int = 300_000  # ~550x550 pixels
+    min_area: int = 100_000  # ~316x316 pixels (allows typical cookbook images)
     max_width: int = 600
     quality: int = 85
     strategy: SelectionStrategy = SelectionStrategy.LARGEST
@@ -141,24 +141,42 @@ class ImageService:
         return self._select_by_size(candidates, recipe)
 
     def _extract_image_paths(self, recipe: MelaRecipe) -> list[str]:
-        """Extract image paths from recipe markdown.
+        """Extract image paths from recipe.
+
+        Checks recipe.images first (set by LLM), then falls back to
+        searching instructions for markdown image syntax.
 
         Args:
-            recipe: Recipe containing markdown with image references
+            recipe: Recipe containing image references
 
         Returns:
             List of unique image paths
         """
-        # Get markdown from instructions or any available content
-        markdown = "\n".join(recipe.instructions)
+        paths: list[str] = []
 
-        # MarkItDown creates: ![alt](../images/filename.jpg)
-        pattern = r"!\[.*?\]\(([^)]+\.(?:jpg|jpeg|png|gif))\)"
-        paths = re.findall(pattern, markdown, re.IGNORECASE)
+        # First, check if recipe already has image paths from LLM
+        if recipe.images:
+            for img_ref in recipe.images:
+                # Handle EPUB internal references like "c02_split_007.xhtml#image_page_54_1"
+                # Extract image ID from anchor
+                if "#" in img_ref and "image_" in img_ref:
+                    # This is an EPUB reference - we'll resolve it via the EPUB's image items
+                    paths.append(img_ref)
+                # Handle direct image paths like "../Images/photo.jpg"
+                elif img_ref.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
+                    paths.append(img_ref)
 
-        # Also try simpler pattern for src attributes
-        simple_pattern = r'(?:src=["\']?)([^"\'<>]+\.(?:png|jpg|jpeg|gif))'
-        paths.extend(re.findall(simple_pattern, markdown, re.IGNORECASE))
+        # Fall back to searching instructions if no images found
+        if not paths:
+            markdown = "\n".join(recipe.instructions)
+
+            # MarkItDown creates: ![alt](../images/filename.jpg)
+            pattern = r"!\[.*?\]\(([^)]+\.(?:jpg|jpeg|png|gif))\)"
+            paths = re.findall(pattern, markdown, re.IGNORECASE)
+
+            # Also try simpler pattern for src attributes
+            simple_pattern = r'(?:src=["\']?)([^"\'<>]+\.(?:png|jpg|jpeg|gif))'
+            paths.extend(re.findall(simple_pattern, markdown, re.IGNORECASE))
 
         # Deduplicate while preserving order
         seen: set[str] = set()
@@ -183,17 +201,11 @@ class ImageService:
         candidates: list[ImageCandidate] = []
 
         for path in paths:
-            # Normalize path (remove ../ prefix)
-            normalized = path[3:] if path.startswith("../") else path
-            # ebooklib has no type stubs, suppress partial type warnings
-            item: Any = self.book.get_item_with_href(normalized)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-
-            if not item:
-                logger.debug(f"Image not found in EPUB: {normalized}")
+            content = self._resolve_image_path(path)
+            if content is None:
                 continue
 
             try:
-                content: bytes = cast(bytes, item.get_content())  # pyright: ignore[reportUnknownMemberType]
                 with Image.open(BytesIO(content)) as img:
                     width, height = img.size
                     area = width * height
@@ -214,10 +226,125 @@ class ImageService:
                     )
 
             except (OSError, UnidentifiedImageError) as e:
-                logger.debug(f"Failed to load image {normalized}: {e}")
+                logger.debug(f"Failed to load image {path}: {e}")
                 continue
 
         return candidates
+
+    def _resolve_image_path(self, path: str) -> bytes | None:
+        """Resolve an image path to its binary content.
+
+        Handles both direct image paths and EPUB internal references.
+
+        Args:
+            path: Image path or EPUB reference
+
+        Returns:
+            Image bytes, or None if not found
+        """
+        # Handle EPUB internal references like "c02_split_007.xhtml#image_page_54_1"
+        if "#" in path and ("image_" in path or "page_" in path):
+            return self._resolve_epub_reference(path)
+
+        # Handle direct image paths - try with various prefixes
+        normalized = path[3:] if path.startswith("../") else path
+
+        # Try different prefixes (EPUB items often have paths like "OEBPS/Images/...")
+        prefixes_to_try = ["", "OEBPS/", "OEBPS/Images/"]
+        for prefix in prefixes_to_try:
+            test_path = prefix + normalized if not normalized.startswith(prefix) else normalized
+            # ebooklib has no type stubs
+            item: Any = self.book.get_item_with_href(test_path)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            if item:
+                return cast(bytes, item.get_content())  # pyright: ignore[reportUnknownMemberType]
+
+        logger.debug(f"Image not found in EPUB: {normalized}")
+        return None
+
+    def _resolve_epub_reference(self, ref: str) -> bytes | None:
+        """Resolve an EPUB internal reference to image content.
+
+        Parses the XHTML document to find the image element by ID.
+
+        Args:
+            ref: EPUB reference like "c02_split_007.xhtml#image_page_54_1"
+
+        Returns:
+            Image bytes, or None if not found
+        """
+        # Split into document and anchor
+        if "#" not in ref:
+            return None
+
+        doc_href, anchor = ref.split("#", 1)
+
+        # Try to find the document with various path prefixes
+        # EPUB items often have paths like "OEBPS/Text/c02_split_007.xhtml"
+        doc_item: Any = None
+        found_prefix = ""
+        prefixes_to_try = ["", "OEBPS/Text/", "OEBPS/", "Text/"]
+        for prefix in prefixes_to_try:
+            # ebooklib has no type stubs
+            doc_item = self.book.get_item_with_href(prefix + doc_href)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            if doc_item:
+                found_prefix = prefix
+                break
+
+        if not doc_item:
+            logger.debug(f"EPUB document not found: {doc_href}")
+            return None
+
+        try:
+            # ebooklib has no type stubs
+            html_content: str = doc_item.get_content().decode("utf-8")  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+
+            # Find image element with matching id
+            # Pattern matches: <img ... id="image_page_54_1" ... src="path" ...>
+            # or: <image ... id="..." ... xlink:href="path" ...>
+            escaped_anchor = re.escape(anchor)
+            img_pattern = (
+                rf'<(?:img|image)[^>]*id=["\']?{escaped_anchor}["\']?'
+                rf'[^>]*(?:src|xlink:href)=["\']([^"\']+)["\']'
+            )
+            match = re.search(img_pattern, html_content, re.IGNORECASE)  # pyright: ignore[reportUnknownArgumentType]
+
+            if not match:
+                # Try reverse order (src before id)
+                img_pattern = (
+                    rf'<(?:img|image)[^>]*(?:src|xlink:href)=["\']([^"\']+)["\']'
+                    rf'[^>]*id=["\']?{escaped_anchor}["\']?'
+                )
+                match = re.search(img_pattern, html_content, re.IGNORECASE)  # pyright: ignore[reportUnknownArgumentType]
+
+            if not match:
+                logger.debug(f"Image element not found for anchor: {anchor}")
+                return None
+
+            img_src = match.group(1)
+
+            # Resolve relative path from document location
+            # Use full path with prefix for correct relative resolution
+            import posixpath
+
+            full_doc_path = found_prefix + doc_href
+            doc_dir = posixpath.dirname(full_doc_path)
+            if img_src.startswith("../"):
+                img_path = posixpath.normpath(posixpath.join(doc_dir, img_src))
+            else:
+                img_path = img_src
+
+            # Get the actual image
+            # ebooklib has no type stubs
+            img_item: Any = self.book.get_item_with_href(img_path)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            if not img_item:
+                logger.debug(f"Image file not found: {img_path}")
+                return None
+
+            return cast(bytes, img_item.get_content())  # pyright: ignore[reportUnknownMemberType]
+
+        except (UnicodeDecodeError, AttributeError) as e:
+            logger.debug(f"Failed to parse EPUB reference {ref}: {e}")
+            return None
 
     def _select_by_size(self, candidates: list[ImageCandidate], recipe: MelaRecipe) -> str | None:
         """Select image by largest area (heuristic).

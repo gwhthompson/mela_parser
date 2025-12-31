@@ -201,12 +201,14 @@ class FileRecipeRepository:
         return {
             "id": str(uuid.uuid4()),
             "title": recipe.title,
+            "text": recipe.text or "",
             "ingredients": ingredients_str,
             "instructions": instructions_str,
-            "recipeYield": recipe.recipeYield or "",
+            "yield": recipe.recipeYield or "",
             "prepTime": format_minutes(recipe.prepTime),
             "cookTime": format_minutes(recipe.cookTime),
             "totalTime": format_minutes(recipe.totalTime),
+            "notes": recipe.notes or "",
             "categories": categories,
             "images": recipe.images,
             "link": "",  # Will be set by caller if needed
